@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { BookOpen, ArrowRight, CheckCircle, User, Lock, Target } from 'lucide-react';
+import { BookOpen, ArrowRight, CheckCircle, User, Lock, Target, Mail } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const { login, isAuthenticated } = useAuth();
 
   if (isAuthenticated) {
@@ -17,13 +18,17 @@ const Login: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsLoading(true);
     
-    const success = await login(username, password);
+    const success = await login(email, password);
     setIsLoading(false);
     
-    if (!success) {
-      setError('Invalid username or password. Please try again.');
+    if (success) {
+      setSuccess('Đăng nhập thành công! Chuyển hướng đến Dashboard...');
+      // Redirect will happen automatically due to isAuthenticated change
+    } else {
+      setError('Email hoặc mật khẩu không đúng. Vui lòng thử lại.');
     }
   };
 
@@ -94,20 +99,26 @@ const Login: React.FC = () => {
                 </div>
               )}
 
+              {success && (
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-green-600 text-sm">{success}</p>
+                </div>
+              )}
+
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div>
-                  <label htmlFor="username" className="block text-sm font-medium text-slate-700 mb-2">
-                    Username
+                  <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
+                    Email
                   </label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
                     <input
-                      id="username"
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                      placeholder="Enter your username"
+                      placeholder="Enter your email"
                       required
                     />
                   </div>
@@ -168,7 +179,7 @@ const Login: React.FC = () => {
 
               <div className="mt-6 text-center">
                 <p className="text-sm text-slate-500">
-                  Demo: Use any username and password to login
+                  Demo: Use admin@example.com with any password to login
                 </p>
               </div>
             </div>

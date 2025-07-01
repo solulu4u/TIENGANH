@@ -7,7 +7,6 @@ const Register: React.FC = () => {
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
-    username: '',
     password: '',
     confirmPassword: '',
     level: 'intermediate' as 'beginner' | 'intermediate' | 'advanced',
@@ -18,7 +17,7 @@ const Register: React.FC = () => {
   const { login, isAuthenticated } = useAuth();
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard\" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const validateForm = () => {
@@ -32,12 +31,6 @@ const Register: React.FC = () => {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Email is invalid';
-    }
-
-    if (!formData.username.trim()) {
-      newErrors.username = 'Username is required';
-    } else if (formData.username.length < 3) {
-      newErrors.username = 'Username must be at least 3 characters';
     }
 
     if (!formData.password) {
@@ -70,7 +63,7 @@ const Register: React.FC = () => {
     // Simulate registration API call
     setTimeout(async () => {
       // Auto-login after successful registration
-      const success = await login(formData.username, formData.password);
+      const success = await login(formData.email, formData.password);
       setIsLoading(false);
       
       if (!success) {
@@ -204,70 +197,6 @@ const Register: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="username" className="block text-sm font-medium text-slate-700 mb-2">
-                      Username
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        id="username"
-                        name="username"
-                        type="text"
-                        value={formData.username}
-                        onChange={handleInputChange}
-                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                          errors.username ? 'border-red-300' : 'border-slate-300'
-                        }`}
-                        placeholder="Choose a username"
-                      />
-                    </div>
-                    {errors.username && <p className="mt-1 text-sm text-red-600">{errors.username}</p>}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="level" className="block text-sm font-medium text-slate-700 mb-2">
-                        Current Level
-                      </label>
-                      <select
-                        id="level"
-                        name="level"
-                        value={formData.level}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                      >
-                        <option value="beginner">Beginner</option>
-                        <option value="intermediate">Intermediate</option>
-                        <option value="advanced">Advanced</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label htmlFor="targetScore" className="block text-sm font-medium text-slate-700 mb-2">
-                        Target Score
-                      </label>
-                      <div className="relative">
-                        <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                        <input
-                          id="targetScore"
-                          name="targetScore"
-                          type="number"
-                          step="0.5"
-                          min="4.0"
-                          max="9.0"
-                          value={formData.targetScore}
-                          onChange={handleInputChange}
-                          className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                            errors.targetScore ? 'border-red-300' : 'border-slate-300'
-                          }`}
-                          placeholder="7.0"
-                        />
-                      </div>
-                      {errors.targetScore && <p className="mt-1 text-sm text-red-600">{errors.targetScore}</p>}
-                    </div>
-                  </div>
-
-                  <div>
                     <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-2">
                       Password
                     </label>
@@ -307,6 +236,47 @@ const Register: React.FC = () => {
                       />
                     </div>
                     {errors.confirmPassword && <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>}
+                  </div>
+
+                  <div>
+                    <label htmlFor="level" className="block text-sm font-medium text-slate-700 mb-2">
+                      Current Level
+                    </label>
+                    <select
+                      id="level"
+                      name="level"
+                      value={formData.level}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    >
+                      <option value="beginner">Beginner</option>
+                      <option value="intermediate">Intermediate</option>
+                      <option value="advanced">Advanced</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="targetScore" className="block text-sm font-medium text-slate-700 mb-2">
+                      Target IELTS Score
+                    </label>
+                    <div className="relative">
+                      <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                      <input
+                        id="targetScore"
+                        name="targetScore"
+                        type="number"
+                        min="4.0"
+                        max="9.0"
+                        step="0.5"
+                        value={formData.targetScore}
+                        onChange={handleInputChange}
+                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
+                          errors.targetScore ? 'border-red-300' : 'border-slate-300'
+                        }`}
+                        placeholder="7.0"
+                      />
+                    </div>
+                    {errors.targetScore && <p className="mt-1 text-sm text-red-600">{errors.targetScore}</p>}
                   </div>
                 </div>
 

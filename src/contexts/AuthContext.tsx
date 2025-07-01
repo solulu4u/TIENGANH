@@ -5,6 +5,7 @@ import React, {
     useEffect,
     ReactNode,
 } from "react"
+import { loginUser, ApiResponse } from "../utils/api"
 
 interface User {
     id: string
@@ -17,7 +18,7 @@ interface User {
 
 interface AuthContextType {
     user: User | null
-    login: (username: string, password: string) => Promise<boolean>
+    login: (email: string, password: string) => Promise<boolean>
     logout: () => void
     isAuthenticated: boolean
     updateProfile: (updates: Partial<User>) => void
@@ -40,38 +41,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
     useEffect(() => {
         const savedUser = localStorage.getItem("ielts_user")
-        if (savedUser) {
+        const token = localStorage.getItem("ielts_token")
+        if (savedUser && token) {
             setUser(JSON.parse(savedUser))
         }
     }, [])
 
     const login = async (
-        username: string,
+        email: string,
         password: string
     ): Promise<boolean> => {
-        // Simulate API call
-        if (username && password) {
-            const mockUser: User = {
-                id: "1",
-                username,
-                email: `${username}@example.com`,
-                fullName:
-                    username.charAt(0).toUpperCase() +
-                    username.slice(1) +
-                    " Student",
-                level: "intermediate",
-                targetScore: 7.0,
+        try {
+            const response: ApiResponse<string> = await loginUser(email, password);
+
+            if (response.success && response.data) {
+                // Store the JWT token
+                localStorage.setItem("ielts_token", response.data);
+                
+                // Create a mock user object (you can decode the JWT to get real user data)
+                const mockUser: User = {
+                    id: "1",
+                    username: email.split('@')[0],
+                    email: email,
+                    fullName: email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1) + " Student",
+                    level: "intermediate",
+                    targetScore: 7.0,
+                }
+                
+                setUser(mockUser)
+                localStorage.setItem("ielts_user", JSON.stringify(mockUser))
+                return true
+            } else {
+                console.error('Login failed:', response.message);
+                return false
             }
-            setUser(mockUser)
-            localStorage.setItem("ielts_user", JSON.stringify(mockUser))
-            return true
+        } catch (error) {
+            console.error('Login error:', error);
+            return false
         }
-        return false
     }
 
     const logout = () => {
         setUser(null)
         localStorage.removeItem("ielts_user")
+        localStorage.removeItem("ielts_token")
         localStorage.removeItem("ielts_progress")
     }
 
