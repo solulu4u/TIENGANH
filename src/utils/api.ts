@@ -69,4 +69,24 @@ export const registerUser = async (userData: {
     method: 'POST',
     body: JSON.stringify(userData),
   });
+};
+
+export const getSkills = async (): Promise<ApiResponse<any[]>> => {
+  return apiCall<any[]>('/api/skills/get-all');
+};
+
+export const getCategories = async (): Promise<ApiResponse<any[]>> => {
+  return apiCall<any[]>('/api/categories/get-all');
+};
+
+export const getLessonById = async (lessonId: string): Promise<ApiResponse<any>> => {
+  return apiCall<any>(`/api/lesson/${lessonId}`);
+};
+
+export const getLessonsByCategory = async (category: string): Promise<ApiResponse<any[]>> => {
+  return apiCall<any[]>(`/api/lesson/category/${category}`);
+};
+
+export const getAllLessons = async (): Promise<ApiResponse<any[]>> => {
+  return apiCall<any[]>('/api/lesson');
 }; 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   BookOpen, 
@@ -14,98 +14,63 @@ import {
   Star,
   ArrowRight
 } from 'lucide-react';
+import { Category } from '../types/category';
+import { getCategories } from '../utils/api';
 
 const DictationCategories: React.FC = () => {
-  const categories = [
-    {
-      id: 'short-stories',
-      title: 'Short Stories',
-      description: 'A collection of audio articles introducing culture, people, places, historical events and daily life in English-speaking countries, especially Canada and America.',
-      icon: BookOpen,
-      color: 'from-blue-500 to-blue-600',
-      lessons: 25,
-      difficulty: 'Intermediate',
-      duration: '5-10 min',
-      accent: 'North American'
-    },
-    {
-      id: 'daily-conversations',
-      title: 'Daily Conversations',
-      description: 'Short and fun English conversations in common situations you may experience in daily life.',
-      icon: MessageSquare,
-      color: 'from-green-500 to-green-600',
-      lessons: 30,
-      difficulty: 'Beginner',
-      duration: '3-5 min',
-      accent: 'Mixed'
-    },
-    {
-      id: 'toeic-listening',
-      title: 'TOEIC Listening',
-      description: 'In this section, there are a lot of conversations and short talks in everyday life and at work. Let\'s practice and improve your English communication skills!',
-      icon: Briefcase,
-      color: 'from-purple-500 to-purple-600',
-      lessons: 40,
-      difficulty: 'Intermediate',
-      duration: '4-8 min',
-      accent: 'American'
-    },
-    {
-      id: 'youtube',
-      title: 'YouTube',
-      description: 'Are you bored with English lessons for students? Let\'s learn real English from YouTube videos that native speakers watch and enjoy!',
-      icon: Youtube,
-      color: 'from-red-500 to-red-600',
-      lessons: 20,
-      difficulty: 'Advanced',
-      duration: '8-15 min',
-      accent: 'Mixed'
-    },
-    {
-      id: 'ielts-listening',
-      title: 'IELTS Listening',
-      description: 'Listening to IELTS recordings will help you learn a lot of vocabulary and expressions about everyday conversations & academic talks. These recordings are mainly in British and Australian accents.',
-      icon: Headphones,
-      color: 'from-indigo-500 to-indigo-600',
-      lessons: 35,
-      difficulty: 'Intermediate',
-      duration: '6-12 min',
-      accent: 'British/Australian'
-    },
-    {
-      id: 'toefl-listening',
-      title: 'TOEFL Listening',
-      description: 'TOEFL listening recordings are academic conversations & lectures, mainly in American English. These recordings will help you to get better preparation if you are planning to study in an English-speaking country, especially the US and Canada.',
-      icon: GraduationCap,
-      color: 'from-orange-500 to-orange-600',
-      lessons: 28,
-      difficulty: 'Advanced',
-      duration: '10-20 min',
-      accent: 'American'
-    },
-    {
-      id: 'spelling-names',
-      title: 'Spelling Names',
-      description: 'Let\'s learn and practice the English alphabet by spelling some common names and improve your ability to understand English numbers when they are spoken quickly.',
-      icon: Mic,
-      color: 'from-pink-500 to-rose-600',
-      lessons: 15,
-      difficulty: 'Beginner',
-      duration: '2-4 min',
-      accent: 'American'
-    },
-    {
-      id: 'world-news',
-      title: 'World News',
-      description: 'Stay updated with current events while improving your listening skills through authentic news broadcasts and reports.',
-      icon: Globe,
-      color: 'from-teal-500 to-teal-600',
-      lessons: 22,
-      difficulty: 'Advanced',
-      duration: '5-12 min',
-      accent: 'International'
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await getCategories();
+      if (response.success && response.data) {
+        // Merge icon and color for UI display
+        const categoriesWithUI = response.data.map((category: any) => ({
+          ...category,
+          icon: getCategoryIcon(category.title),
+          color: getCategoryColor(category.title)
+        }));
+        setCategories(categoriesWithUI);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  const getCategoryIcon = (title: string) => {
+    const iconMap: Record<string, React.ElementType> = {
+      'Short Stories': BookOpen,
+      'Daily Conversations': MessageSquare,
+      'TOEIC Listening': Briefcase,
+      'YouTube': Youtube,
+      'IELTS Listening': Headphones,
+      'TOEFL Listening': GraduationCap,
+      'Spelling Names': Mic,
+      'World News': Globe
+    };
+    return iconMap[title] || BookOpen;
+  };
+
+  const getCategoryColor = (title: string) => {
+    const colorMap: Record<string, string> = {
+      'Short Stories': 'from-blue-500 to-blue-600',
+      'Daily Conversations': 'from-green-500 to-green-600',
+      'TOEIC Listening': 'from-purple-500 to-purple-600',
+      'YouTube': 'from-red-500 to-red-600',
+      'IELTS Listening': 'from-indigo-500 to-indigo-600',
+      'TOEFL Listening': 'from-orange-500 to-orange-600',
+      'Spelling Names': 'from-pink-500 to-rose-600',
+      'World News': 'from-teal-500 to-teal-600'
+    };
+    return colorMap[title] || 'from-gray-500 to-gray-600';
+  };
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -115,6 +80,14 @@ const DictationCategories: React.FC = () => {
       default: return 'bg-gray-100 text-gray-800';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-lg text-slate-600">Loading categories...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -163,55 +136,58 @@ const DictationCategories: React.FC = () => {
 
       {/* Categories Grid */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {categories.map((category) => (
-          <div key={category.id} className="group bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl hover:-translate-y-2 transition-all duration-300">
-            <div className="p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className={`w-16 h-16 bg-gradient-to-r ${category.color} rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                  <category.icon className="w-8 h-8 text-white" />
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDifficultyColor(category.difficulty)}`}>
-                  {category.difficulty}
-                </span>
-              </div>
-              
-              <h3 className="text-xl font-semibold text-slate-800 mb-3">{category.title}</h3>
-              <p className="text-slate-600 text-sm leading-relaxed mb-4 line-clamp-3">{category.description}</p>
-              
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center justify-between text-sm text-slate-500">
-                  <div className="flex items-center space-x-1">
-                    <BookOpen className="w-4 h-4" />
-                    <span>{category.lessons} lessons</span>
+        {categories.map((category) => {
+          const IconComponent = category.icon || BookOpen;
+          return (
+            <div key={category.id} className="group bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-xl hover:-translate-y-2 transition-all duration-300">
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className={`w-16 h-16 bg-gradient-to-r ${category.color} rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                    <IconComponent className="w-8 h-8 text-white" />
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Clock className="w-4 h-4" />
-                    <span>{category.duration}</span>
-                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${getDifficultyColor(category.difficulty)}`}>
+                    {category.difficulty}
+                  </span>
                 </div>
                 
-                <div className="flex items-center justify-between text-sm text-slate-500">
-                  <div className="flex items-center space-x-1">
-                    <Globe className="w-4 h-4" />
-                    <span>{category.accent}</span>
+                <h3 className="text-xl font-semibold text-slate-800 mb-3">{category.title}</h3>
+                <p className="text-slate-600 text-sm leading-relaxed mb-4 line-clamp-3">{category.description}</p>
+                
+                <div className="space-y-3 mb-6">
+                  <div className="flex items-center justify-between text-sm text-slate-500">
+                    <div className="flex items-center space-x-1">
+                      <BookOpen className="w-4 h-4" />
+                      <span>{category.lessonsCount} lessons</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Clock className="w-4 h-4" />
+                      <span>{category.duration} min</span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                    <span>4.8</span>
+                  
+                  <div className="flex items-center justify-between text-sm text-slate-500">
+                    <div className="flex items-center space-x-1">
+                      <Globe className="w-4 h-4" />
+                      <span>{category.accent}</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                      <span>4.8</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <Link
-                to={`/dashboard/dictation/${category.id}`}
-                className="w-full bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 py-3 px-4 rounded-xl hover:from-slate-200 hover:to-slate-300 transition-all duration-200 font-medium text-center flex items-center justify-center space-x-2 group-hover:from-blue-500 group-hover:to-indigo-500 group-hover:text-white"
-              >
-                <span>Explore Lessons</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
+                <Link
+                  to={`/dashboard/dictation/${category.id}`}
+                  className="w-full bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 py-3 px-4 rounded-xl hover:from-slate-200 hover:to-slate-300 transition-all duration-200 font-medium text-center flex items-center justify-center space-x-2 group-hover:from-blue-500 group-hover:to-indigo-500 group-hover:text-white"
+                >
+                  <span>Explore Lessons</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Features Section */}
