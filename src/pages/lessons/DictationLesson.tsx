@@ -1,424 +1,503 @@
-
-import React, { useState, useEffect } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Mic, Eye, EyeOff } from "lucide-react";
+import { useProgress } from "../../contexts/ProgressContext";
+import { getLessonById } from "../../utils/api";
+import type { LessonData, Challenge } from "../../types/dictationTypes";
 import {
-    ArrowLeft,
-    Play,
-    Pause,
-    RotateCcw,
-    Check,
-    ArrowRight,
-    Eye,
-    EyeOff,
-} from "lucide-react"
-import { useProgress } from "../../contexts/ProgressContext"
-import { getLessonById } from '../../utils/api';
+    compareWordsDetailed,
+    simulatePronunciationFeedback,
+    renderPronunciationFeedback,
+    getCharacterColor,
+    getWordBorderColor,
+} from "../../utils/dictationUtils";
+import DictationAudioPlayer from "../../components/lessons/DictationAudioPlayer";
+import DictationWritingArea from "../../components/lessons/DictationWritingArea";
+import DictationFeedback from "../../components/lessons/DictationFeedback";
+import DictationPronunciation from "../../components/lessons/DictationPronunciation";
+// import PronunciationFeedback from "../../components/lessons/PronunciationFeedback"; // Comment out nếu không dùng
 
-// --- CÁC INTERFACE VÀ HÀM LOGIC (KHÔNG THAY ĐỔI) --- //
-interface Character {
-    char: string
-    status: "correct" | "incorrect" | "extra" | "missing"
-    isCorrect: boolean
-    correctChar?: string
-}
-
-interface WordComparison {
-    userWord: string
-    correctWord: string
-    status: "correct" | "partial" | "extra" | "missing"
-    characters: Character[]
-}
-
-const levenshteinDistance = (str1: string, str2: string): number => {
-    const m = str1.length
-    const n = str2.length
-    const dp: number[][] = Array(m + 1)
-        .fill(null)
-        .map(() => Array(n + 1).fill(0))
-
-    for (let i = 0; i <= m; i++) dp[i][0] = i
-    for (let j = 0; j <= n; j++) dp[0][j] = j
-
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            if (str1[i - 1] === str2[j - 1]) {
-                dp[i][j] = dp[i - 1][j - 1]
-            } else {
-                dp[i][j] = Math.min(
-                    dp[i - 1][j - 1] + 1, // substitution
-                    dp[i - 1][j] + 1, // deletion
-                    dp[i][j - 1] + 1 // insertion
-                )
-            }
-        }
-    }
-    return dp[m][n]
-}
-
-const findClosestWord = (word: string, wordList: string[]): string => {
-    let minDistance = Infinity
-    let closestWord = ""
-
-    for (const target of wordList) {
-        const distance = levenshteinDistance(
-            word.toLowerCase(),
-            target.toLowerCase()
-        )
-        if (distance < minDistance) {
-            minDistance = distance
-            closestWord = target
-        }
-    }
-
-    return closestWord
-}
-
-const compareWordsDetailed = (userText: string, correctText: string) => {
-    const userWords = userText
-        .toLowerCase()
-        .trim()
-        .split(/\s+/)
-        .filter(word => word.length > 0)
-    const correctWords = correctText
-        .toLowerCase()
-        .trim()
-        .split(/\s+/)
-        .filter(word => word.length > 0)
-
-    const result = []
-    const maxLength = Math.max(userWords.length, correctWords.length)
-
-    for (let i = 0; i < maxLength; i++) {
-        const userWord = userWords[i] || ""
-        let correctWord = correctWords[i] || ""
-
-        if (userWord && (!correctWord || userWord !== correctWord)) {
-            correctWord = findClosestWord(userWord, correctWords)
-        }
-
-        if (!userWord && correctWord) {
-            result.push({
-                userWord: "",
-                correctWord,
-                status: "missing",
-                characters: [],
-            })
-        } else if (userWord && !correctWord) {
-            result.push({
-                userWord,
-                correctWord: "",
-                status: "extra",
-                characters: userWord
-                    .split("")
-                    .map(char => ({ char, status: "extra", isCorrect: false })),
-            })
-        } else {
-            const characters = []
-            const maxCharLength = Math.max(userWord.length, correctWord.length)
-
-            for (let j = 0; j < maxCharLength; j++) {
-                const userChar = userWord[j] || ""
-                const correctChar = correctWord[j] || ""
-
-                if (!userChar && correctChar) {
-                    characters.push({ char: correctChar, status: "missing", isCorrect: false })
-                } else if (userChar && !correctChar) {
-                    characters.push({ char: userChar, status: "extra", isCorrect: false })
-                } else if (userChar === correctChar) {
-                    characters.push({ char: userChar, status: "correct", isCorrect: true })
-                } else {
-                    characters.push({ char: userChar, status: "incorrect", isCorrect: false, correctChar })
-                }
-            }
-            result.push({
-                userWord,
-                correctWord,
-                status: userWord === correctWord ? "correct" : "partial",
-                characters,
-            })
-        }
-    }
-    return result
-}
-
-
-// --- COMPONENT DictationLesson --- //
 const DictationLesson: React.FC = () => {
-    const { lessonId } = useParams<{ lessonId: string }>()
-    const navigate = useNavigate()
-    const { startLesson, getProgress, addAttempt } = useProgress()
+    const { lessonId } = useParams<{ lessonId: string }>();
+    const navigate = useNavigate();
+    const { startLesson, getProgress, addAttempt } = useProgress();
 
-    const [lesson, setLesson] = useState<any>(null)
-    const [loading, setLoading] = useState(true)
-    const [currentSentence, setCurrentSentence] = useState(0)
-    const [userTranscript, setUserTranscript] = useState("")
-    const [isPlaying, setIsPlaying] = useState(false)
-    const [currentTime, setCurrentTime] = useState(0) // Giữ lại state này nếu bạn muốn phát triển thanh progress audio
-    const [showFeedback, setShowFeedback] = useState(false)
-    const [feedback, setFeedback] = useState<any>(null)
-    const [playCount, setPlayCount] = useState(0)
-    const [canProceed, setCanProceed] = useState(false)
-    // *** THÊM MỚI: State để hiển thị/ẩn đáp án đúng ***
-    const [showCorrectAnswer, setShowCorrectAnswer] = useState(false)
+    const [lesson, setLesson] = useState<LessonData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const progress = getProgress(lessonId!);
 
+    const [currentSentence, setCurrentSentence] = useState(0);
+    const [userTranscript, setUserTranscript] = useState("");
+    const [isPlaying, setIsPlaying] = useState(false); // Trạng thái phát chung (audio hoặc youtube)
+    const [currentTime, setCurrentTime] = useState(0);
+    const [showFeedback, setShowFeedback] = useState(false);
+    const [feedback, setFeedback] = useState<any>(null);
+    const [playCount, setPlayCount] = useState(0);
+    const [showCorrectAnswer, setShowCorrectAnswer] = useState(false);
+    const [pronunciationEnabled, setPronunciationEnabled] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [pronunciationFeedback, setPronunciationFeedback] = useState<string>("");
+    const [showPronunciationSection, setShowPronunciationSection] = useState(false); // Có vẻ không được sử dụng
+    const [canProceed, setCanProceed] = useState(false);
+    const [showText, setShowText] = useState(true);
+    const [pendingAutoPlay, setPendingAutoPlay] = useState(false);
+
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [youtubePlayer, setYoutubePlayer] = useState<any>(null);
+    const [isYoutubePlaying, setIsYoutubePlaying] = useState(false); // Trạng thái riêng cho youtube
+
+    // Lấy currentDictation và useYoutube dựa trên currentSentence và lesson
+    const currentDictation = lesson?.challenges ? lesson.challenges[currentSentence] : null;
+    const useYoutube =
+        !!currentDictation && // Đảm bảo currentDictation tồn tại
+        !currentDictation.audioSrc && // Chỉ dùng YouTube nếu không có audioSrc riêng
+        !!lesson?.youtubeUrl &&
+        currentDictation.timeStart !== undefined &&
+        currentDictation.timeEnd !== undefined;
+
+    // Sử dụng ref để theo dõi trạng thái phát khi next, tránh re-render không cần thiết
+    // và đảm bảo việc tự động phát chỉ xảy ra MỘT LẦN khi chuyển câu.
+    const autoPlayRef = useRef(false);
+
+    // Effect để fetch bài học
     useEffect(() => {
-        if (!lessonId) return;
-        setLoading(true)
-        getLessonById(lessonId)
-            .then(res => setLesson(res.data))
-            .catch(() => setLesson(null))
-            .finally(() => setLoading(false))
-    }, [lessonId])
-    
-    const progress = getProgress(lessonId!)
+        const fetchLesson = async () => {
+            if (!lessonId) return;
+            try {
+                setLoading(true);
+                const response = await getLessonById(lessonId);
+                if (response.success && response.data) {
+                    setLesson(response.data);
+                    if (!progress) {
+                        startLesson(
+                            lessonId,
+                            "dictation",
+                            response.data.challenges?.length || 0
+                        );
+                    }
+                    // Đặt autoPlayRef.current = true để phát câu đầu tiên khi lesson load xong
+                    autoPlayRef.current = true;
+                } else {
+                    setError(response.message || "Failed to load lesson");
+                }
+            } catch (err) {
+                setError("Failed to load lesson");
+                console.error("Error fetching lesson:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchLesson();
+    }, [lessonId, progress, startLesson]);
 
+
+    // Effect để cập nhật currentTime cho audioRef và xử lý dừng audio
     useEffect(() => {
-        if (lesson && !progress && lessonId) {
-            startLesson(lessonId, "dictation", lesson.challenges.length)
-        }
-    }, [lesson, progress, lessonId, startLesson])
+        const audio = audioRef.current;
+        if (!audio) return;
+        const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+        const handleEnded = () => {
+            setIsPlaying(false);
+            setCurrentTime(0);
+            audio.pause();
+            audio.currentTime = 0; // Reset về đầu
+        };
+        const handlePlay = () => setIsPlaying(true);
+        const handlePause = () => setIsPlaying(false);
 
-    // *** THÊM MỚI: Các hàm helper để lấy màu ***
-    const getCharacterColor = (status: string) => {
-        switch (status) {
-            case "correct":
-                return "bg-green-100 text-green-800"
-            case "incorrect":
-                return "bg-red-100 text-red-800"
-            case "extra":
-                return "bg-purple-100 text-purple-800"
-            case "missing":
-                return "bg-gray-200 text-gray-500 line-through"
-            default:
-                return "text-slate-600"
-        }
-    }
+        audio.addEventListener("timeupdate", handleTimeUpdate);
+        audio.addEventListener("ended", handleEnded);
+        audio.addEventListener("play", handlePlay);
+        audio.addEventListener("pause", handlePause);
 
-    const getWordBorderColor = (status: string) => {
-        switch (status) {
-            case "correct":
-                return "border-green-300"
-            case "partial":
-                return "border-yellow-300"
-            case "extra":
-                return "border-purple-300"
-            case "missing":
-                return "border-gray-300"
-            default:
-                return "border-slate-300"
-        }
-    }
-    
-    if (loading) return <div>Loading...</div>
-    if (!lesson || !lesson.challenges || lesson.challenges.length === 0) return <div>Lesson not found or no challenges</div>
+        return () => {
+            audio.removeEventListener("timeupdate", handleTimeUpdate);
+            audio.removeEventListener("ended", handleEnded);
+            audio.removeEventListener("play", handlePlay);
+            audio.removeEventListener("pause", handlePause);
+        };
+    }, [audioRef]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        setUserTranscript(e.target.value)
-        setShowFeedback(false)
-        setFeedback(null)
-        setCanProceed(false)
-        setShowCorrectAnswer(false) // Reset khi người dùng nhập lại
-    }
+
+    // Hàm phát audio truyền thống (sử dụng useCallback)
+    const playChallengeAudio = useCallback(() => {
+        if (currentDictation?.audioSrc && audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play();
+            setPlayCount(prev => prev + 1);
+            setIsPlaying(true);
+        }
+    }, [currentDictation?.audioSrc]);
+
+    // Hàm phát đoạn YouTube (sử dụng useCallback)
+    const playYoutubeSegment = useCallback(() => {
+        if (youtubePlayer && useYoutube && currentDictation && currentDictation.timeStart !== undefined) {
+            youtubePlayer.pauseVideo(); // Đảm bảo dừng hẳn trước khi seek
+            youtubePlayer.seekTo(currentDictation.timeStart, true);
+            setTimeout(() => {
+                youtubePlayer.playVideo();
+            }, 100); // Delay nhỏ để YouTube xử lý seek
+            setIsYoutubePlaying(true);
+            setIsPlaying(true);
+            setPlayCount(prev => prev + 1);
+        }
+    }, [youtubePlayer, useYoutube, currentDictation]);
+
+
+    const pauseYoutube = useCallback(() => {
+        if (youtubePlayer && useYoutube) {
+            youtubePlayer.pauseVideo();
+            setIsYoutubePlaying(false);
+            setIsPlaying(false);
+        }
+    }, [youtubePlayer, useYoutube]);
+
+    // Effect để kiểm soát việc dừng YouTube player khi hết đoạn
+    useEffect(() => {
+        if (!youtubePlayer || !useYoutube || !currentDictation) return;
+
+        let interval: ReturnType<typeof setInterval>;
+        if (isYoutubePlaying) {
+            interval = setInterval(() => {
+                const current = youtubePlayer.getCurrentTime();
+                // Dừng video nếu vượt quá hoặc bằng thời gian kết thúc của đoạn với một ngưỡng nhỏ
+                if (current >= currentDictation.timeEnd - 0.1) {
+                    youtubePlayer.pauseVideo();
+                    setIsYoutubePlaying(false);
+                    setIsPlaying(false);
+                    clearInterval(interval); // Dừng interval
+                    youtubePlayer.seekTo(currentDictation.timeStart, true); // Về đầu đoạn
+                }
+            }, 200);
+        }
+        return () => clearInterval(interval); // Cleanup khi component unmount hoặc dependencies thay đổi
+    }, [isYoutubePlaying, youtubePlayer, useYoutube, currentDictation]);
+
 
     const handleCheck = () => {
-        if (!userTranscript.trim() || !lesson.challenges) return
+        if (!userTranscript.trim() || !lesson?.challenges || !currentDictation) return;
 
-        const correctText = lesson.challenges[currentSentence].content
-        const comparison = compareWordsDetailed(userTranscript, correctText)
-        const isCorrect = comparison.every(word => word.status === "correct")
+        const correctText = currentDictation.content;
+        const comparison = compareWordsDetailed(userTranscript, correctText);
+        const isCorrect =
+            comparison.length === correctText.trim().split(/\s+/).length &&
+            comparison.every(word => word.status === "correct");
 
         setFeedback({
             allCorrect: isCorrect,
+            userText: userTranscript,
             comparison,
             correctText,
-        })
-        setShowFeedback(true)
-        setCanProceed(isCorrect)
-
+        });
+        setShowFeedback(true);
+        setCanProceed(isCorrect);
+        // Nếu trả lời đúng, đánh dấu để tự động phát câu tiếp theo
+        if (isCorrect) {
+            autoPlayRef.current = true;
+        }
+        
         addAttempt(lessonId!, {
             sentenceIndex: currentSentence,
             userAnswer: userTranscript,
             correctAnswer: correctText,
             aiFeedback: { allCorrect: isCorrect, comparison },
             score: isCorrect ? 10 : 5,
-            attemptNumber: 1, // Bạn có thể cần logic để tăng số lần thử
+            attemptNumber: 1,
             createdAt: new Date(),
-        })
-    }
+        });
+    };
 
     const handleNext = () => {
-        if (currentSentence < lesson.challenges.length - 1) {
-            setCurrentSentence(currentSentence + 1)
-            setUserTranscript("")
-            setShowFeedback(false)
-            setFeedback(null)
-            setPlayCount(0)
-            setCurrentTime(0)
-            setCanProceed(false)
-            setShowCorrectAnswer(false)
-        } else {
-            // Chuyển hướng khi hoàn thành bài học
-            navigate(`/dashboard/dictation/${lesson.accent}`)
+        // Dừng và reset các player hiện tại
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+            setIsPlaying(false);
         }
-    }
+        if (youtubePlayer) { // youtubePlayer có thể chưa load nếu đang dùng audio
+            youtubePlayer.pauseVideo();
+            youtubePlayer.seekTo(currentDictation?.timeStart || 0, true);
+            setIsYoutubePlaying(false);
+        }
 
-    const playAudio = () => {
-        setIsPlaying(true)
-        setCurrentTime(0)
-        setPlayCount(prev => prev + 1)
-        // Dữ liệu mới có timeStart và timeEnd
-        const duration = lesson.challenges[currentSentence].timeEnd - lesson.challenges[currentSentence].timeStart
-        setTimeout(() => {
-            setIsPlaying(false)
-            setCurrentTime(0)
-        }, duration * 1000)
-    }
+        // Kiểm tra nếu còn câu tiếp theo
+        if (lesson?.challenges && currentSentence < lesson.challenges.length - 1) {
+            setCurrentSentence(currentSentence + 1); // Cập nhật sang câu tiếp theo
+            setUserTranscript("");
+            setShowFeedback(false);
+            setFeedback(null);
+            setPlayCount(0); // Reset số lần phát cho câu mới
+            setCurrentTime(0); // Reset thời gian phát về 0
+            setCanProceed(false);
+            setPronunciationFeedback(""); // Reset feedback phát âm
+            setShowCorrectAnswer(false); // Ẩn đáp án đúng
+            
+            // autoPlayRef.current đã được set ở handleCheck nếu đúng
+            // Nếu không tự động phát được ở handleCheck (ví dụ người dùng bấm next mà chưa đúng)
+            // thì vẫn sẽ cố gắng phát.
+            // Điều này đảm bảo rằng câu tiếp theo luôn cố gắng phát khi Next
+            if (!autoPlayRef.current) {
+                autoPlayRef.current = true; 
+            }
+        } else {
+            // Đã hoàn thành tất cả các câu
+            navigate(`/dashboard/dictation`);
+        }
+    };
 
-    const resetAudio = () => {
-        setIsPlaying(false)
-        setCurrentTime(0)
+    // Effect để tự động phát âm thanh/video khi currentSentence thay đổi
+    // Hoặc khi lesson/currentDictation được load lần đầu, hoặc khi autoPlayRef được bật
+    useEffect(() => {
+        // Log để debug
+        console.log(`useEffect: currentSentence=${currentSentence}, lesson=${!!lesson}, currentDictation=${!!currentDictation}, youtubePlayer=${!!youtubePlayer}, useYoutube=${useYoutube}, autoPlayRef.current=${autoPlayRef.current}`);
+        
+        // Chỉ chạy nếu lesson và currentDictation đã được load VÀ có tín hiệu tự động phát
+        if (lesson && currentDictation && autoPlayRef.current) {
+            // Reset autoPlayRef.current ngay lập tức để tránh phát lại nhiều lần
+            autoPlayRef.current = false; 
+
+            if (useYoutube) {
+                if (youtubePlayer) {
+                    console.log("Attempting to play YouTube segment...");
+                    setTimeout(() => {
+                        playYoutubeSegment();
+                    }, 100);
+                } else {
+                    // Player chưa sẵn sàng, đánh dấu cần auto play
+                    setPendingAutoPlay(true);
+                }
+            } else {
+                console.log("Attempting to play audio challenge...");
+                playChallengeAudio();
+            }
+        }
+        // Không return cleanup ở đây!
+    }, [currentSentence, useYoutube, lesson, currentDictation, youtubePlayer, playYoutubeSegment, playChallengeAudio]);
+
+    useEffect(() => {
+        if (pendingAutoPlay && youtubePlayer && useYoutube) {
+            setPendingAutoPlay(false);
+            setTimeout(() => {
+                playYoutubeSegment();
+            }, 100);
+        }
+    }, [pendingAutoPlay, youtubePlayer, useYoutube, playYoutubeSegment]);
+
+
+    const resetAudio = useCallback(() => {
+        setIsPlaying(false);
+        setIsYoutubePlaying(false);
+        setCurrentTime(0);
+        if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.pause();
+        }
+        if (youtubePlayer && currentDictation) {
+            youtubePlayer.pauseVideo();
+            youtubePlayer.seekTo(currentDictation.timeStart, true);
+        }
+        setPlayCount(0);
+    }, [audioRef, youtubePlayer, currentDictation]);
+
+    const startPronunciationRecording = async () => {
+        try {
+            setIsRecording(true);
+            setShowText(false);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            const audioChunks: BlobPart[] = [];
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+                setShowText(true);
+                if (lesson?.challenges && currentDictation) {
+                    setPronunciationFeedback(
+                        simulatePronunciationFeedback(currentDictation.content)
+                    );
+                }
+            };
+            mediaRecorder.start();
+            setTimeout(() => {
+                mediaRecorder.stop();
+                stream.getTracks().forEach(track => track.stop());
+                setIsRecording(false);
+            }, 5000);
+        } catch (error) {
+            console.error("Error accessing microphone:", error);
+            setIsRecording(false);
+            setShowText(true);
+            alert("Error accessing microphone. Please check your permissions.");
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-pink-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600 mx-auto mb-4"></div>
+                    <p className="text-slate-600">Loading lesson...</p>
+                </div>
+            </div>
+        );
     }
+    if (error || !lesson) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-pink-50 flex items-center justify-center">
+                <div className="text-center">
+                    <p className="text-red-600 mb-4">{error || "Lesson not found"}</p>
+                    <button
+                        onClick={() => navigate("/dashboard/dictation")}
+                        className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700"
+                    >
+                        Back to Lessons
+                    </button>
+                </div>
+            </div>
+        );
+    }
+    const progressPercentage = ((currentSentence + 1) / lesson.challenges.length) * 100;
+
+    // Xử lý dữ liệu feedback phát âm để truyền vào component
+    const pronunciationFeedbackData = currentDictation && pronunciationFeedback
+        ? renderPronunciationFeedback(currentDictation.content, pronunciationFeedback)
+        : [];
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-pink-50">
-            {/* Header */}
             <div className="bg-white shadow-sm border-b border-slate-200 px-6 py-4">
                 <div className="flex items-center justify-between">
-                    <button
-                        onClick={() => navigate(`/dashboard/dictation/${lesson.accent}`)}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                    >
-                        <ArrowLeft className="w-5 h-5 text-slate-600" />
-                    </button>
-                    <div>
-                        <h1 className="text-xl font-semibold text-slate-800">{lesson.title}</h1>
+                    <div className="flex items-center space-x-4">
+                        <button
+                            onClick={() => navigate(`/dashboard/dictation`)}
+                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        >
+                            <ArrowLeft className="w-5 h-5 text-slate-600" />
+                        </button>
+                        <div>
+                            <h1 className="text-xl font-semibold text-slate-800">{lesson.title}</h1>
+                            <p className="text-sm text-slate-600">Write from Dictation • {lesson.accent} Accent</p>
+                        </div>
                     </div>
                     <div className="text-sm text-slate-600">
                         {currentSentence + 1} / {lesson.challenges.length}
                     </div>
                 </div>
+                <div className="mt-4">
+                    <div className="w-full bg-slate-200 rounded-full h-2">
+                        <div
+                            className="bg-gradient-to-r from-pink-500 to-rose-500 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${progressPercentage}%` }}
+                        ></div>
+                    </div>
+                </div>
             </div>
-
             <div className="max-w-4xl mx-auto p-6 space-y-6">
-                {/* Audio Player */}
+                {/* Audio/Video Player */}
+                {currentDictation && (
+                    <DictationAudioPlayer
+                        lesson={lesson}
+                        currentDictation={currentDictation}
+                        useYoutube={Boolean(useYoutube)}
+                        audioRef={audioRef}
+                        youtubePlayer={youtubePlayer}
+                        setYoutubePlayer={setYoutubePlayer}
+                        playCount={playCount}
+                        setPlayCount={setPlayCount}
+                        currentTime={currentTime}
+                        setCurrentTime={setCurrentTime}
+                        isPlaying={isPlaying}
+                        setIsPlaying={setIsPlaying}
+                        isYoutubePlaying={isYoutubePlaying}
+                        setIsYoutubePlaying={setIsYoutubePlaying}
+                        playChallengeAudio={playChallengeAudio}
+                        playYoutubeSegment={playYoutubeSegment}
+                        pauseYoutube={pauseYoutube}
+                        resetAudio={resetAudio}
+                    />
+                )}
+                {/* Writing Area */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                    <div className="text-center space-y-4">
-                        <h3 className="text-lg font-semibold text-slate-800">Listen and Write</h3>
-                        <div className="flex items-center justify-center space-x-4">
-                            <button
-                                onClick={playAudio}
-                                disabled={isPlaying}
-                                className="w-16 h-16 bg-gradient-to-r from-pink-600 to-rose-600 text-white rounded-full flex items-center justify-center hover:from-pink-700 hover:to-rose-700 disabled:opacity-50 transition-all"
-                            >
-                                {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-1" />}
-                            </button>
-                            <button onClick={resetAudio} className="w-12 h-12 bg-slate-500 text-white rounded-full flex items-center justify-center hover:bg-slate-600 transition-colors">
-                                <RotateCcw className="w-5 h-5" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Writing & Feedback Area */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
-                    
-                    {/* *** CẬP NHẬT: Hiển thị phản hồi chi tiết *** */}
-                    {showFeedback && feedback && !feedback.allCorrect && (
-                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                            <h4 className="font-semibold text-slate-700 mb-3">Your Answer Analysis:</h4>
-                            <div className="flex flex-wrap gap-2 text-lg">
-                                {feedback.comparison.map((word: WordComparison, index: number) => (
-                                    <div key={index} className={`p-1 border-b-2 ${getWordBorderColor(word.status)}`}>
-                                        {word.status === 'missing' ? (
-                                             <span className={getCharacterColor('missing')}>
-                                                {word.correctWord}
-                                            </span>
-                                        ) : (
-                                            word.characters.map((char: Character, charIndex: number) => (
-                                                <span key={charIndex} className={`px-0.5 rounded ${getCharacterColor(char.status)}`}>
-                                                    {char.status === 'incorrect' ? char.correctChar : char.char}
-                                                </span>
-                                            ))
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                     
-                    {/* *** CẬP NHẬT: Hiển thị đáp án đúng nếu được yêu cầu *** */}
-                    {showCorrectAnswer && feedback && (
-                         <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                             <h4 className="font-semibold text-green-800 mb-2">Correct Answer:</h4>
-                             <p className="text-lg text-green-900 font-medium">{feedback.correctText}</p>
-                         </div>
-                    )}
-
-                    {/* Textarea cho người dùng nhập */}
-                    {!feedback?.allCorrect && (
-                        <textarea
-                            value={userTranscript}
-                            onChange={handleInputChange}
-                            placeholder="Type what you hear from the audio..."
-                            className={`w-full h-32 p-4 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none text-lg ${
-                                showFeedback
-                                    ? feedback?.allCorrect
-                                        ? "border-green-500 bg-green-50"
-                                        : "border-red-500 bg-red-50"
-                                    : "border-slate-300"
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">
+                        {feedback?.allCorrect && showText
+                            ? currentDictation?.content ?? ""
+                            : pronunciationEnabled && !isRecording
+                            ? "Click the microphone to start recording"
+                            : feedback?.allCorrect // Khi correct rồi nhưng chưa showText
+                            ? currentDictation?.content ?? ""
+                            : "Write what you hear"}
+                    </h3>
+                    <DictationWritingArea
+                        userTranscript={userTranscript}
+                        setUserTranscript={setUserTranscript}
+                        showFeedback={showFeedback}
+                        setShowFeedback={setShowFeedback}
+                        feedback={feedback}
+                        canProceed={canProceed}
+                        handleCheck={handleCheck}
+                        handleNext={handleNext}
+                        currentSentence={currentSentence}
+                        lesson={lesson}
+                        pronunciationEnabled={pronunciationEnabled}
+                        isRecording={isRecording}
+                        showText={showText}
+                        setPronunciationFeedback={setPronunciationFeedback}
+                        startPronunciationRecording={startPronunciationRecording}
+                        pronunciationFeedbackData={pronunciationFeedbackData}
+                        pronunciationFeedback={pronunciationFeedback}
+                        setShowText={setShowText}
+                    />
+                    <div className="flex items-center justify-center space-x-6 pt-4">
+                        <button
+                            onClick={() => setPronunciationEnabled(!pronunciationEnabled)}
+                            className={`px-4 py-2 rounded-full flex items-center space-x-2 transition-all ${
+                                pronunciationEnabled
+                                    ? "bg-pink-100 text-pink-800"
+                                    : "bg-slate-100 text-slate-600"
                             }`}
-                        />
-                    )}
-
-                    {/* Hiển thị khi trả lời đúng hoàn toàn */}
-                    {feedback?.allCorrect && (
-                         <div className="p-4 bg-green-50 rounded-lg border border-green-200 text-center">
-                             <h4 className="font-semibold text-green-800 text-xl">🎉 Excellent! That's correct.</h4>
-                             <p className="text-lg text-green-900 font-medium mt-2">{feedback.correctText}</p>
-                         </div>
-                    )}
-
-                    {/* Các nút điều khiển */}
-                    <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
-                        {!feedback?.allCorrect && (
-                            <button
-                                onClick={handleCheck}
-                                disabled={!userTranscript.trim() || showFeedback}
-                                className="flex-1 bg-gradient-to-r from-pink-600 to-rose-600 text-white py-3 px-6 rounded-lg hover:from-pink-700 hover:to-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
-                            >
-                                <Check className="w-5 h-5" />
-                                <span>Check Transcript</span>
-                            </button>
-                        )}
-                        
-                        {/* *** CẬP NHẬT: Nút Show/Hide Answer *** */}
-                        {showFeedback && !feedback.allCorrect && (
-                            <button
-                                onClick={() => setShowCorrectAnswer(!showCorrectAnswer)}
-                                className="flex-1 bg-slate-200 text-slate-700 py-3 px-6 rounded-lg hover:bg-slate-300 transition-colors flex items-center justify-center space-x-2"
-                            >
-                                {showCorrectAnswer ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                <span>{showCorrectAnswer ? 'Hide Answer' : 'Show Answer'}</span>
-                            </button>
-                        )}
-
-                        {/* Luôn hiển thị nút Next/Complete sau khi đã check */}
-                        {(canProceed || (showFeedback && !feedback.allCorrect)) && (
-                            <button
-                                onClick={handleNext}
-                                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 flex items-center justify-center space-x-2"
-                            >
-                                <span>
-                                    {currentSentence < lesson.challenges.length - 1 ? "Next" : "Complete"}
-                                </span>
-                                <ArrowRight className="w-5 h-5" />
-                            </button>
-                        )}
+                        >
+                            <Mic className="w-4 h-4" />
+                            <span>Pronunciation Check</span>
+                        </button>
+                        <button
+                            onClick={() => setShowCorrectAnswer(!showCorrectAnswer)}
+                            className={`px-4 py-2 rounded-full flex items-center space-x-2 transition-all ${
+                                showCorrectAnswer
+                                    ? "bg-pink-100 text-pink-800"
+                                    : "bg-slate-100 text-slate-600"
+                            }`}
+                        >
+                            {showCorrectAnswer ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            <span>Show Answer</span>
+                        </button>
                     </div>
                 </div>
+                {/* Pronunciation Section */}
+                {pronunciationEnabled && (
+                    <DictationPronunciation
+                        showPronunciationSection={true}
+                        isRecording={isRecording}
+                        pronunciationFeedbackData={pronunciationFeedbackData}
+                        startPronunciationRecording={startPronunciationRecording}
+                        currentDictation={currentDictation as Challenge}
+                    />
+                )}
+
+                {/* Feedback */}
+                <DictationFeedback
+                    showFeedback={showFeedback}
+                    feedback={feedback}
+                    showCorrectAnswer={showCorrectAnswer}
+                    setShowCorrectAnswer={setShowCorrectAnswer}
+                    getCharacterColor={getCharacterColor}
+                    getWordBorderColor={getWordBorderColor}
+                    lesson={lesson}
+                />
             </div>
         </div>
-    )
-}
+    );
+};
 
-export default DictationLesson
+export default DictationLesson;

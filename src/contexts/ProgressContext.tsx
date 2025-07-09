@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getProgressesByUser, createProgress, updateProgress as updateProgressApi } from '../utils/api';
 
 interface LessonProgress {
   lessonId: string;
@@ -51,44 +52,64 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [progress, setProgress] = useState<{ [lessonId: string]: LessonProgress }>({});
 
   useEffect(() => {
-    const savedProgress = localStorage.getItem('ielts_progress');
-    if (savedProgress) {
-      setProgress(JSON.parse(savedProgress));
+    const userId = localStorage.getItem('ielts_user_id');
+    if (userId) {
+      getProgressesByUser(userId).then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          const progressMap: { [lessonId: string]: LessonProgress } = {};
+          res.data.forEach((item: any) => {
+            progressMap[item.lessonId] = {
+              lessonId: item.lessonId,
+              skillType: item.skillType || '',
+              currentSentence: item.currentSentence || 0,
+              completedSentences: item.completedSentences || 0,
+              totalSentences: item.totalSentences || 0,
+              score: item.score || 0,
+              status: item.status || 'not_started',
+              startedAt: item.startedAt ? new Date(item.startedAt) : undefined,
+              completedAt: item.completedAt ? new Date(item.completedAt) : undefined,
+              attempts: []
+            }
+          });
+          setProgress(progressMap);
+        }
+      });
     }
   }, []);
 
-  const saveProgress = (newProgress: { [lessonId: string]: LessonProgress }) => {
-    setProgress(newProgress);
-    localStorage.setItem('ielts_progress', JSON.stringify(newProgress));
+  const startLesson = async (lessonId: string, skillType: string, totalSentences: number) => {
+    const userId = localStorage.getItem('ielts_user_id');
+    if (!userId) return;
+    const res = await createProgress({ userId, lessonId, skillType, totalSentences });
+    if (res.success) {
+      setProgress(prev => ({
+        ...prev,
+        [lessonId]: {
+          lessonId,
+          skillType,
+          currentSentence: 0,
+          completedSentences: 0,
+          totalSentences,
+          score: 0,
+          status: 'in_progress',
+          startedAt: new Date(),
+          attempts: []
+        }
+      }));
+    }
   };
 
-  const startLesson = (lessonId: string, skillType: string, totalSentences: number) => {
-    const newProgress = {
-      ...progress,
+  const updateProgress = async (lessonId: string, updates: Partial<LessonProgress>) => {
+    const userId = localStorage.getItem('ielts_user_id');
+    if (!userId) return;
+    await updateProgressApi({ userId, lessonId, ...updates });
+    setProgress(prev => ({
+      ...prev,
       [lessonId]: {
-        lessonId,
-        skillType,
-        currentSentence: 0,
-        completedSentences: 0,
-        totalSentences,
-        score: 0,
-        status: 'in_progress' as const,
-        startedAt: new Date(),
-        attempts: []
-      }
-    };
-    saveProgress(newProgress);
-  };
-
-  const updateProgress = (lessonId: string, updates: Partial<LessonProgress>) => {
-    const newProgress = {
-      ...progress,
-      [lessonId]: {
-        ...progress[lessonId],
+        ...prev[lessonId],
         ...updates
       }
-    };
-    saveProgress(newProgress);
+    }));
   };
 
   const addAttempt = (lessonId: string, attempt: SentenceAttempt) => {

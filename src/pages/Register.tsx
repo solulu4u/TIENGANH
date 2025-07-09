@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { BookOpen, ArrowRight, CheckCircle, User, Mail, Lock, Target } from 'lucide-react';
+import { registerUser } from '../utils/api';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -60,16 +61,33 @@ const Register: React.FC = () => {
 
     setIsLoading(true);
     
-    // Simulate registration API call
-    setTimeout(async () => {
-      // Auto-login after successful registration
-      const success = await login(formData.email, formData.password);
-      setIsLoading(false);
-      
-      if (!success) {
-        setErrors({ general: 'Registration failed. Please try again.' });
+    try {
+      const response = await registerUser({
+        fullName: formData.fullName,
+        email: formData.email,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        level: formData.level,
+        targetScore: formData.targetScore
+      });
+
+      console.log('Register response:', response);
+
+      if (response.success) {
+        // Auto-login after successful registration
+        const success = await login(formData.email, formData.password);
+        if (!success) {
+          setErrors({ general: 'Registration successful but login failed. Please try logging in manually.' });
+        }
+      } else {
+        setErrors({ general: response.message || 'Registration failed. Please try again.' });
       }
-    }, 1500);
+    } catch (error) {
+      console.error('Register error:', error);
+      setErrors({ general: 'Registration failed. Please try again.' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {

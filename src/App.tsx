@@ -20,6 +20,7 @@ import GrammarLesson from "./pages/lessons/GrammarLesson"
 import SpeakingLesson from "./pages/lessons/SpeakingLesson"
 import DictationLesson from "./pages/lessons/DictationLesson"
 import Profile from "./pages/Profile"
+import CategoryLessons from "./pages/CategoryLessons"
 
 function App() {
     return (
@@ -44,6 +45,10 @@ function App() {
                                 <Route
                                     path="dictation/:category"
                                     element={<DictationLessons />}
+                                />
+                                <Route
+                                    path="dictation/category/:categoryTitle"
+                                    element={<CategoryLessons />}
                                 />
                                 <Route path="vocabulary">
                                     <Route

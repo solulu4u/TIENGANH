@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { 
   BookOpen, 
   MessageSquare, 
@@ -12,36 +12,41 @@ import {
   Clock,
   Users,
   Star,
-  ArrowRight
+  ArrowRight,
+  Play,
+  ArrowLeft
 } from 'lucide-react';
 import { Category } from '../types/category';
-import { getCategories } from '../utils/api';
+import { getCategoriesBySkillName, getLessonsByCategoryTitle } from '../utils/api';
+import { titleToSlug } from '../utils/categorySlugMap';
 
 const DictationCategories: React.FC = () => {
+  const { skillName } = useParams<{ skillName?: string }>();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingLessons, setLoadingLessons] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchCategories();
-  }, []);
+  }, [skillName]);
 
   const fetchCategories = async () => {
-    try {
-      const response = await getCategories();
-      if (response.success && response.data) {
-        // Merge icon and color for UI display
-        const categoriesWithUI = response.data.map((category: any) => ({
-          ...category,
-          icon: getCategoryIcon(category.title),
-          color: getCategoryColor(category.title)
-        }));
-        setCategories(categoriesWithUI);
-      }
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    } finally {
-      setLoading(false);
+    let skillParam = 'Dictation';
+    if (skillName) {
+      skillParam = skillName.charAt(0).toUpperCase() + skillName.slice(1).toLowerCase();
     }
+    const response = await getCategoriesBySkillName(skillParam);
+    console.log('Skill param FE truyền:', skillParam, 'API response:', response);
+    if (response.success && response.data) {
+      const categoriesWithUI = response.data.map((category: any) => ({
+        ...category,
+        icon: getCategoryIcon(category.title),
+        color: getCategoryColor(category.title)
+      }));
+      setCategories(categoriesWithUI);
+    }
+    setLoading(false);
   };
 
   const getCategoryIcon = (title: string) => {
@@ -178,7 +183,7 @@ const DictationCategories: React.FC = () => {
                 </div>
 
                 <Link
-                  to={`/dashboard/dictation/${category.id}`}
+                  to={`/dashboard/dictation/${category.title}`}
                   className="w-full bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 py-3 px-4 rounded-xl hover:from-slate-200 hover:to-slate-300 transition-all duration-200 font-medium text-center flex items-center justify-center space-x-2 group-hover:from-blue-500 group-hover:to-indigo-500 group-hover:text-white"
                 >
                   <span>Explore Lessons</span>

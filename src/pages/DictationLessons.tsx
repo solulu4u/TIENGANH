@@ -2,19 +2,62 @@ import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Play, Clock, Star, Users, Volume2, CheckCircle } from 'lucide-react';
 import { useProgress } from '../contexts/ProgressContext';
-import { getAllLessons } from '../utils/api';
+import { getLessonsByCategoryTitle } from '../utils/api';
+import { slugToTitle } from '../utils/categorySlugMap';
 
 const DictationLessons: React.FC = () => {
   const { getProgress } = useProgress();
+  const { category } = useParams<{ category?: string }>();
   const [lessons, setLessons] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
+  // Audio playback state (chỉ 1 audio player hoạt động)
+  const [playingLessonId, setPlayingLessonId] = React.useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [currentAudioURL, setCurrentAudioURL] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    if (!category) return;
     setLoading(true);
-    getAllLessons().then(res => {
+    getLessonsByCategoryTitle(category).then(res => {
       setLessons(res.data || []);
-    }).finally(() => setLoading(false));
+      setLoading(false);
+    });
+  }, [category]);
+
+  // Khi đổi bài hoặc dừng, cập nhật audio src
+  React.useEffect(() => {
+    if (audioRef.current && currentAudioURL) {
+      audioRef.current.src = currentAudioURL;
+      audioRef.current.play();
+    }
+  }, [currentAudioURL]);
+
+  // Xử lý khi audio kết thúc
+  React.useEffect(() => {
+    if (!audioRef.current) return;
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setPlayingLessonId(null);
+    };
+    audioRef.current.addEventListener('ended', handleEnded);
+    return () => {
+      audioRef.current?.removeEventListener('ended', handleEnded);
+    };
   }, []);
+
+  const handlePlayAudio = (lessonId: string, audioURL: string | undefined) => {
+    if (!audioURL) return;
+    if (playingLessonId === lessonId && isPlaying) {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      setPlayingLessonId(null);
+    } else {
+      setCurrentAudioURL(audioURL);
+      setPlayingLessonId(lessonId);
+      setIsPlaying(true);
+    }
+  };
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -42,6 +85,8 @@ const DictationLessons: React.FC = () => {
             const completionPercentage = progress 
               ? Math.round((progress.completedSentences / progress.totalSentences) * 100)
               : 0;
+            // Log audioURL for debugging
+            console.log('Lesson', lesson.lessonId, 'audioURL:', lesson.audioURL);
             return (
               <div key={lesson.lessonId} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all duration-200">
                 <div className="p-6">
@@ -61,6 +106,18 @@ const DictationLessons: React.FC = () => {
                           </span>
                         ))}
                       </div>
+                      {/* Audio playback button */}
+                      {lesson.audioURL && (
+                        <div className="flex items-center space-x-2 mb-2">
+                          <button
+                            onClick={() => handlePlayAudio(lesson.lessonId, lesson.audioURL)}
+                            className={`px-3 py-1 rounded bg-pink-500 text-white hover:bg-pink-600 transition ${(playingLessonId === lesson.lessonId && isPlaying) ? 'opacity-70' : ''}`}
+                            type="button"
+                          >
+                            {(playingLessonId === lesson.lessonId && isPlaying) ? 'Đang phát...' : 'Phát audio'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="text-right ml-4">
                       <div className="flex items-center space-x-1 text-sm text-slate-500 mb-1">
@@ -106,7 +163,7 @@ const DictationLessons: React.FC = () => {
                       )}
                     </div>
                     <Link
-                      to={`/dashboard/lesson/dictation/${lesson.lessonId}`}
+                      to={`/dashboard/lesson/dictation/${lesson.lessonId}?category=${category}`}
                       className="px-6 py-2 bg-gradient-to-r from-pink-600 to-rose-600 text-white rounded-lg hover:from-pink-700 hover:to-rose-700 transition-all duration-200 font-medium flex items-center space-x-2"
                     >
                       <Play className="w-4 h-4" />
@@ -144,6 +201,13 @@ const DictationLessons: React.FC = () => {
           </div>
         </div>
       </div>
+      {/* Audio element dùng chung */}
+      <audio
+        ref={audioRef}
+        style={{ display: 'none' }}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+      />
     </div>
   );
 };
