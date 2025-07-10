@@ -1,29 +1,29 @@
-import React from "react";
-import YouTube from "react-youtube";
-import { Play, RotateCcw, Volume2 } from "lucide-react";
-import type { LessonData, Challenge } from "../../types/dictationTypes";
-import type { YouTubeEvent } from "react-youtube";
+import React from "react"
+import YouTube from "react-youtube"
+import { Play, RotateCcw, Volume2 } from "lucide-react"
+import type { LessonData, Challenge } from "../../types/dictationTypes"
+import type { YouTubeEvent } from "react-youtube"
 
 type Props = {
-    lesson: LessonData;
-    currentDictation: Challenge;
-    useYoutube: boolean;
-    audioRef: React.RefObject<HTMLAudioElement>;
-    youtubePlayer: any;
-    setYoutubePlayer: (player: any) => void;
-    playCount: number;
-    setPlayCount: (count: number) => void;
-    currentTime: number;
-    setCurrentTime: (time: number) => void;
-    isPlaying: boolean;
-    setIsPlaying: (playing: boolean) => void;
-    isYoutubePlaying: boolean;
-    setIsYoutubePlaying: (playing: boolean) => void;
-    playChallengeAudio: () => void;
-    playYoutubeSegment: () => void;
-    pauseYoutube: () => void;
-    resetAudio: () => void;
-};
+    lesson: LessonData
+    currentDictation: Challenge
+    useYoutube: boolean
+    audioRef: React.RefObject<HTMLAudioElement>
+    youtubePlayer: any
+    setYoutubePlayer: (player: any) => void
+    playCount: number
+    setPlayCount: (count: number) => void
+    currentTime: number
+    setCurrentTime: (time: number) => void
+    isPlaying: boolean
+    setIsPlaying: (playing: boolean) => void
+    isYoutubePlaying: boolean
+    setIsYoutubePlaying: (playing: boolean) => void
+    playChallengeAudio: () => void
+    playYoutubeSegment: () => void
+    pauseYoutube: () => void
+    resetAudio: () => void
+}
 
 const DictationAudioPlayer: React.FC<Props> = ({
     lesson,
@@ -57,72 +57,39 @@ const DictationAudioPlayer: React.FC<Props> = ({
                         {/* ✅ Responsive video wrapper with 16:9 aspect ratio */}
                         <div className="w-full max-w-2xl aspect-[16/9] mx-auto relative">
                             <YouTube
-                                videoId={lesson.videoId || lesson.youtubeUrl?.split("v=")[1]}
+                                videoId={
+                                    lesson.videoId ||
+                                    lesson.youtubeUrl?.split("v=")[1]
+                                }
                                 opts={{
                                     width: "100%",
                                     height: "100%",
                                     playerVars: {
-                                        start: Math.floor(currentDictation.timeStart),
-                                        end: Math.ceil(currentDictation.timeEnd),
+                                        start: Math.floor(
+                                            currentDictation.timeStart
+                                        ),
+                                        end: Math.ceil(
+                                            currentDictation.timeEnd
+                                        ),
                                         controls: 1,
                                         modestbranding: 1,
                                         rel: 0,
                                     },
                                 }}
                                 iframeClassName="absolute top-0 left-0 w-full h-full"
-                                onReady={(e: YouTubeEvent) => setYoutubePlayer(e.target)}
+                                onReady={(e: YouTubeEvent) =>
+                                    setYoutubePlayer(e.target)
+                                }
                                 onPause={pauseYoutube}
                                 onPlay={() => setIsYoutubePlaying(true)}
                             />
                         </div>
                     </div>
-
-                    <div className="flex items-center justify-center space-x-4">
-                        <button
-                            onClick={playYoutubeSegment}
-                            className="w-16 h-16 bg-gradient-to-r from-pink-600 to-rose-600 text-white rounded-full flex items-center justify-center hover:from-pink-700 hover:to-rose-700 transition-all"
-                            type="button"
-                            disabled={!youtubePlayer}
-                        >
-                            <Play className="w-6 h-6 ml-1" />
-                        </button>
-                        <button
-                            onClick={pauseYoutube}
-                            className="w-12 h-12 bg-slate-500 text-white rounded-full flex items-center justify-center hover:bg-slate-600 transition-colors"
-                            type="button"
-                            disabled={!youtubePlayer}
-                        >
-                            <RotateCcw className="w-5 h-5" />
-                        </button>
-                    </div>
-
-                    <div className="text-sm text-slate-600">
-                        <span>Video: YouTube</span>
-                        <span className="mx-2">•</span>
-                        <span>
-                            Segment: {currentDictation.timeStart.toFixed(2)}s - {currentDictation.timeEnd.toFixed(2)}s
-                        </span>
-                    </div>
+                    {/* Removed Play/Replay buttons for YouTube */}
                 </div>
             ) : (
                 <>
-                    <div className="flex items-center justify-center space-x-4">
-                        <button
-                            onClick={playChallengeAudio}
-                            className="w-16 h-16 bg-gradient-to-r from-pink-600 to-rose-600 text-white rounded-full flex items-center justify-center hover:from-pink-700 hover:to-rose-700 transition-all"
-                            type="button"
-                            disabled={!currentDictation || !currentDictation.audioSrc}
-                        >
-                            <Play className="w-6 h-6 ml-1" />
-                        </button>
-                        <button
-                            onClick={resetAudio}
-                            className="w-12 h-12 bg-slate-500 text-white rounded-full flex items-center justify-center hover:bg-slate-600 transition-colors"
-                        >
-                            <RotateCcw className="w-5 h-5" />
-                        </button>
-                    </div>
-
+                    {/* Removed Play/Replay buttons for audio */}
                     <audio
                         ref={audioRef}
                         src={currentDictation?.audioSrc || undefined}
@@ -135,16 +102,22 @@ const DictationAudioPlayer: React.FC<Props> = ({
                             <div
                                 className="bg-gradient-to-r from-pink-500 to-rose-500 h-2 rounded-full transition-all"
                                 style={{
-                                    width: `${currentDictation && audioRef.current?.duration
-                                        ? (currentTime / audioRef.current.duration) * 100
-                                        : 0
-                                        }%`,
+                                    width: `${
+                                        currentDictation &&
+                                        audioRef.current?.duration
+                                            ? (currentTime /
+                                                  audioRef.current.duration) *
+                                              100
+                                            : 0
+                                    }%`,
                                 }}
                             ></div>
                         </div>
                         <div className="flex justify-between text-xs text-slate-500 mt-1">
                             <span>{currentTime.toFixed(1)}s</span>
-                            <span>{(audioRef.current?.duration || 0).toFixed(1)}s</span>
+                            <span>
+                                {(audioRef.current?.duration || 0).toFixed(1)}s
+                            </span>
                         </div>
                     </div>
 
@@ -155,13 +128,14 @@ const DictationAudioPlayer: React.FC<Props> = ({
                         </div>
                         <span>•</span>
                         <span>
-                            Duration: {(audioRef.current?.duration || 0).toFixed(1)}s
+                            Duration:{" "}
+                            {(audioRef.current?.duration || 0).toFixed(1)}s
                         </span>
                     </div>
                 </>
             )}
         </div>
-    );
-};
+    )
+}
 
-export default DictationAudioPlayer;
+export default DictationAudioPlayer

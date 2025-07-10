@@ -1,28 +1,31 @@
-import React from "react";
-import { Check, ArrowRight, Mic, Square } from "lucide-react";
-import type { LessonData } from "../../types/dictationTypes";
-import PronunciationFeedback from "./PronunciationFeedback";
+import React from "react"
+import { Check, ArrowRight, Mic, Square } from "lucide-react"
+import type { LessonData } from "../../types/dictationTypes"
+import PronunciationFeedback from "./PronunciationFeedback"
 
 type Props = {
-    userTranscript: string;
-    setUserTranscript: (val: string) => void;
-    showFeedback: boolean;
-    setShowFeedback: (val: boolean) => void;
-    feedback: any;
-    canProceed: boolean;
-    handleCheck: () => void;
-    handleNext: () => void;
-    currentSentence: number;
-    lesson: LessonData;
-    pronunciationEnabled: boolean;
-    isRecording: boolean;
-    showText: boolean;
-    setPronunciationFeedback: (val: string) => void;
-    startPronunciationRecording: () => void;
-    pronunciationFeedbackData: { word: string; chars: { char: string; isCorrect: boolean }[] }[];
-    pronunciationFeedback: string;
-    setShowText: (val: boolean) => void;
-};
+    userTranscript: string
+    setUserTranscript: (val: string) => void
+    showFeedback: boolean
+    setShowFeedback: (val: boolean) => void
+    feedback: any
+    canProceed: boolean
+    handleCheck: () => void
+    handleNext: () => void
+    currentSentence: number
+    lesson: LessonData
+    pronunciationEnabled: boolean
+    isRecording: boolean
+    showText: boolean
+    setPronunciationFeedback: (val: string) => void
+    startPronunciationRecording: () => void
+    pronunciationFeedbackData: {
+        word: string
+        chars: { char: string; isCorrect: boolean }[]
+    }[]
+    pronunciationFeedback: string
+    setShowText: (val: boolean) => void
+}
 
 const DictationWritingArea: React.FC<Props> = ({
     userTranscript,
@@ -44,16 +47,15 @@ const DictationWritingArea: React.FC<Props> = ({
     pronunciationFeedback,
     setShowText,
 }) => {
-    const currentDictation = lesson.challenges[currentSentence];
+    const currentDictation = lesson.challenges[currentSentence]
     return (
         <div className="space-y-4">
-            {(!feedback?.allCorrect || !pronunciationEnabled) ? (
+            {!feedback?.allCorrect || !pronunciationEnabled ? (
                 <textarea
                     value={userTranscript}
                     onChange={e => {
-                        setUserTranscript(e.target.value);
-                        setShowFeedback(false);
-                        setPronunciationFeedback("");
+                        setUserTranscript(e.target.value)
+                        setPronunciationFeedback("")
                     }}
                     placeholder="Type what you hear from the audio..."
                     className={`w-full h-32 p-4 border rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none text-lg ${
@@ -68,13 +70,15 @@ const DictationWritingArea: React.FC<Props> = ({
                 <div className="space-y-6">
                     <div className="bg-slate-50 rounded-lg p-8">
                         <div className="text-center mb-8">
-                            <PronunciationFeedback data={pronunciationFeedbackData} />
+                            <PronunciationFeedback
+                                data={pronunciationFeedbackData}
+                            />
                         </div>
                         <div className="flex justify-center">
                             <button
                                 onClick={() => {
-                                    setPronunciationFeedback("");
-                                    startPronunciationRecording();
+                                    setPronunciationFeedback("")
+                                    startPronunciationRecording()
                                 }}
                                 disabled={isRecording}
                                 className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
@@ -124,7 +128,7 @@ const DictationWritingArea: React.FC<Props> = ({
                 )}
             </div>
         </div>
-    );
-};
+    )
+}
 
-export default DictationWritingArea; 
+export default DictationWritingArea
