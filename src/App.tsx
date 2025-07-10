@@ -21,6 +21,9 @@ import SpeakingLesson from "./pages/lessons/SpeakingLesson"
 import DictationLesson from "./pages/lessons/DictationLesson"
 import Profile from "./pages/Profile"
 import CategoryLessons from "./pages/CategoryLessons"
+import MultiplayerLobby from "./components/multiplayer/MultiplayerLobby"
+import MultiplayerRoom from "./components/multiplayer/MultiplayerRoom"
+import MultiplayerGame from "./components/multiplayer/MultiplayerGame"
 
 function App() {
     return (
@@ -49,6 +52,18 @@ function App() {
                                 <Route
                                     path="dictation/category/:categoryTitle"
                                     element={<CategoryLessons />}
+                                />
+                                <Route
+                                    path="multiplayer"
+                                    element={<MultiplayerLobby />}
+                                />
+                                <Route
+                                    path="multiplayer/room/:roomId"
+                                    element={<MultiplayerRoom />}
+                                />
+                                <Route
+                                    path="multiplayer/game/:roomId"
+                                    element={<MultiplayerGame />}
                                 />
                                 <Route path="vocabulary">
                                     <Route

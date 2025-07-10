@@ -10,6 +10,8 @@ import {
     FileText,
     Mic,
     User,
+    Users,
+    Zap
 } from "lucide-react"
 
 const navigation = [
@@ -19,6 +21,7 @@ const navigation = [
     // { name: 'Listening', href: '/dashboard/lessons/listening', icon: Headphones },
     // { name: 'Speaking', href: '/dashboard/lessons/speaking', icon: MessageSquare },
     { name: "Dictation", href: "/dashboard/dictation", icon: Mic },
+    { name: "Multiplayer", href: "/dashboard/multiplayer", icon: Users },
     // { name: 'Vocabulary', href: '/dashboard/lessons/vocabulary', icon: BookMarked },
     // { name: 'Grammar', href: '/dashboard/lessons/grammar', icon: FileText },
     // { name: 'Profile', href: '/dashboard/profile', icon: User },
