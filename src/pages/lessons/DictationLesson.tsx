@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { ArrowLeft, Mic, Eye, EyeOff, Settings } from "lucide-react"
+import {
+    ArrowLeft,
+    Mic,
+    Eye,
+    EyeOff,
+    Settings,
+    SkipForward,
+} from "lucide-react"
 import { useProgress } from "../../contexts/ProgressContext"
 import { getLessonById } from "../../utils/api"
 import type { LessonData, Challenge } from "../../types/dictationTypes"
@@ -44,6 +51,18 @@ const DictationLesson: React.FC = () => {
     const [canProceed, setCanProceed] = useState(false)
     const [showText, setShowText] = useState(true)
     const [pendingAutoPlay, setPendingAutoPlay] = useState(false)
+
+    // Add state for hint toggle and hint word count
+    const [hintEnabled, setHintEnabled] = useState(true)
+    const [hintWordCount, setHintWordCount] = useState(0)
+
+    // Reset hint when moving to next sentence or answer is correct
+    useEffect(() => {
+        setHintWordCount(0)
+    }, [currentSentence])
+    useEffect(() => {
+        if (feedback?.allCorrect) setHintWordCount(0)
+    }, [feedback])
 
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const [youtubePlayer, setYoutubePlayer] = useState<any>(null)
@@ -201,6 +220,10 @@ const DictationLesson: React.FC = () => {
         // Nếu trả lời đúng, đánh dấu để tự động phát câu tiếp theo
         if (isCorrect) {
             autoPlayRef.current = true
+        } else if (hintEnabled) {
+            setHintWordCount(count =>
+                Math.min(count + 1, correctText.trim().split(/\s+/).length)
+            )
         }
 
         addAttempt(lessonId!, {
@@ -368,6 +391,7 @@ const DictationLesson: React.FC = () => {
             setCanProceed(false)
             setPronunciationFeedback("") // Reset feedback phát âm
             setShowCorrectAnswer(false) // Ẩn đáp án đúng
+            setHintWordCount(0) // Reset hint khi chuyển câu
 
             // autoPlayRef.current đã được set ở handleCheck nếu đúng
             // Nếu không tự động phát được ở handleCheck (ví dụ người dùng bấm next mà chưa đúng)
@@ -624,6 +648,58 @@ const DictationLesson: React.FC = () => {
                                             <span>Replay</span>
                                         </button>
                                     )}
+                                    {/* Skip button */}
+                                    <button
+                                        onClick={() => {
+                                            setShowCorrectAnswer(true)
+                                            if (lesson && currentDictation) {
+                                                const correctText =
+                                                    currentDictation.content
+                                                const comparison =
+                                                    compareWordsDetailed(
+                                                        correctText,
+                                                        correctText
+                                                    )
+                                                setFeedback({
+                                                    allCorrect: true,
+                                                    userText: userTranscript,
+                                                    comparison,
+                                                    correctText,
+                                                })
+                                                setShowFeedback(true)
+                                                setCanProceed(true)
+                                                addAttempt(lessonId!, {
+                                                    sentenceIndex:
+                                                        currentSentence,
+                                                    userAnswer: userTranscript,
+                                                    correctAnswer: correctText,
+                                                    aiFeedback: {
+                                                        allCorrect: true,
+                                                        comparison,
+                                                    },
+                                                    score: 0,
+                                                    attemptNumber: 1,
+                                                    createdAt: new Date(),
+                                                })
+                                            }
+                                        }}
+                                        className="px-3 py-1 rounded-full flex items-center space-x-2 text-xs transition-all bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                        type="button"
+                                    >
+                                        <SkipForward className="w-4 h-4" />
+                                        <span>Skip</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setHintEnabled(v => !v)}
+                                        className={`px-3 py-1 rounded-full flex items-center space-x-2 text-xs transition-all ${
+                                            hintEnabled
+                                                ? "bg-blue-100 text-blue-800"
+                                                : "bg-slate-100 text-slate-600"
+                                        }`}
+                                        type="button"
+                                    >
+                                        <span>Hint</span>
+                                    </button>
                                     <button
                                         onClick={() =>
                                             setPronunciationEnabled(
@@ -632,6 +708,7 @@ const DictationLesson: React.FC = () => {
                                         }
                                         className={`px-3 py-1 rounded-full flex items-center space-x-2 text-xs transition-all ${
                                             pronunciationEnabled
+                                            
                                                 ? "bg-pink-100 text-pink-800"
                                                 : "bg-slate-100 text-slate-600"
                                         }`}
@@ -887,6 +964,20 @@ const DictationLesson: React.FC = () => {
                                     lesson={lesson}
                                 />
                             </div>
+                            {/* Below feedback message, show hint if enabled and not all correct */}
+                            {currentDictation &&
+                                hintEnabled &&
+                                showFeedback &&
+                                feedback &&
+                                !feedback.allCorrect && (
+                                    <div className="mt-2 bg-blue-50 text-blue-800 rounded p-2 text-sm w-fit">
+                                        <b>Hint:</b>{" "}
+                                        {currentDictation.content
+                                            .split(/\s+/)
+                                            .slice(0, hintWordCount)
+                                            .join(" ")}
+                                    </div>
+                                )}
                         </div>
                     </div>
                 ) : (
@@ -972,6 +1063,61 @@ const DictationLesson: React.FC = () => {
                                             <span>Replay</span>
                                         </button>
                                     )}
+                                    {/* Skip button */}
+                                    <button
+                                        onClick={() => {
+                                            setShowCorrectAnswer(true)
+                                            if (lesson && currentDictation) {
+                                                const correctText =
+                                                    currentDictation.content
+                                                const comparison =
+                                                    compareWordsDetailed(
+                                                        correctText,
+                                                        correctText
+                                                    )
+                                                setFeedback({
+                                                    allCorrect: true,
+                                                    userText: userTranscript,
+                                                    comparison,
+                                                    correctText,
+                                                })
+                                                setShowFeedback(true)
+                                                setCanProceed(true)
+                                                addAttempt(lessonId!, {
+                                                    sentenceIndex:
+                                                        currentSentence,
+                                                    userAnswer: userTranscript,
+                                                    correctAnswer: correctText,
+                                                    aiFeedback: {
+                                                        allCorrect: true,
+                                                        comparison,
+                                                    },
+                                                    score: 0,
+                                                    attemptNumber: 1,
+                                                    createdAt: new Date(),
+                                                })
+                                            }
+                                        }}
+                                        className="px-3 py-1 rounded-full flex items-center space-x-2 text-xs transition-all bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                        type="button"
+                                    >
+                                        <SkipForward className="w-4 h-4" />
+                                        <span>Skip</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setHintEnabled(v => !v)}
+                                        className={`px-3 py-1 rounded-full flex items-center space-x-2 text-xs transition-all ${
+                                            hintEnabled
+                                                ? "bg-blue-100 text-blue-800"
+                                                : "bg-slate-100 text-slate-600"
+                                        }`}
+                                        type="button"
+                                    >
+                                        <span>Hint</span>
+                                        <span className="ml-1">
+                                            {hintEnabled ? "ON" : "OFF"}
+                                        </span>
+                                    </button>
                                     <button
                                         onClick={() =>
                                             setPronunciationEnabled(
@@ -1235,6 +1381,19 @@ const DictationLesson: React.FC = () => {
                                     lesson={lesson}
                                 />
                             </div>
+                            {/* Below feedback message, show hint if enabled and not all correct */}
+                            {hintEnabled &&
+                                showFeedback &&
+                                feedback &&
+                                !feedback.allCorrect && (
+                                    <div className="mt-2 bg-blue-50 text-blue-800 rounded p-2 text-sm w-fit">
+                                        <b>Hint:</b>{" "}
+                                        {currentDictation.content
+                                            .split(/\s+/)
+                                            .slice(0, hintWordCount)
+                                            .join(" ")}
+                                    </div>
+                                )}
                         </div>
                     </>
                 )}
