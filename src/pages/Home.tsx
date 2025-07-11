@@ -415,39 +415,38 @@ const Home: React.FC = () => {
       </section>
 
       {/* Testimonials Section */}
-      <section id="testimonials" className="py-24 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/10"></div>
+      <section id="testimonials" className="py-24 bg-gradient-to-br from-slate-50 to-blue-50 relative overflow-hidden">
         <div className="relative max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <div className="inline-flex items-center px-4 py-2 bg-white/10 border border-white/20 rounded-full mb-6">
-              <Trophy className="w-4 h-4 text-yellow-400 mr-2" />
-              <span className="text-white text-sm font-medium">Success Stories</span>
+            <div className="inline-flex items-center px-4 py-2 bg-blue-50 border border-blue-200 rounded-full mb-6">
+              <Trophy className="w-4 h-4 text-blue-600 mr-2" />
+              <span className="text-blue-700 text-sm font-medium">Success Stories</span>
             </div>
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-6 text-slate-800">
               Join Thousands of Successful Students
             </h2>
-            <p className="text-xl text-blue-100 max-w-3xl mx-auto">
+            <p className="text-xl text-slate-600 max-w-3xl mx-auto">
               See how our students achieved their target IELTS scores with our AI-powered learning platform.
             </p>
           </div>
 
           <div className="grid lg:grid-cols-3 gap-8">
             {testimonials.map((testimonial, index) => (
-              <div key={index} className="bg-white/10 backdrop-blur-sm rounded-3xl p-8 border border-white/20 hover:bg-white/15 transition-all">
+              <div key={index} className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 border border-blue-100 hover:bg-white transition-all shadow-lg shadow-blue-500/5">
                 <div className="flex items-center space-x-4 mb-6">
-                  <div className="w-14 h-14 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-                    <span className="text-slate-900 font-bold text-lg">{testimonial.avatar}</span>
+                  <div className="w-14 h-14 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                    <span className="text-white font-bold text-lg">{testimonial.avatar}</span>
                   </div>
                   <div>
-                    <h4 className="font-semibold text-lg">{testimonial.name}</h4>
-                    <p className="text-blue-200 text-sm">{testimonial.country}</p>
+                    <h4 className="font-semibold text-lg text-slate-800">{testimonial.name}</h4>
+                    <p className="text-slate-500 text-sm">{testimonial.country}</p>
                     <div className="flex items-center space-x-1 mt-1">
-                      <Trophy className="w-4 h-4 text-yellow-400" />
-                      <span className="text-yellow-400 font-bold">IELTS {testimonial.score}</span>
+                      <Trophy className="w-4 h-4 text-emerald-500" />
+                      <span className="text-emerald-600 font-bold">IELTS {testimonial.score}</span>
                     </div>
                   </div>
                 </div>
-                <p className="text-blue-100 leading-relaxed italic text-lg">"{testimonial.text}"</p>
+                <p className="text-slate-600 leading-relaxed italic text-lg">"{testimonial.text}"</p>
               </div>
             ))}
           </div>
@@ -455,39 +454,39 @@ const Home: React.FC = () => {
       </section>
 
       {/* CTA Section */}
-      <section className="py-24 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/5"></div>
+      <section className="py-24 bg-gradient-to-br from-blue-500/90 to-indigo-600/90 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-50 opacity-20"></div>
         <div className="relative max-w-4xl mx-auto px-6 text-center">
           <div className="space-y-8">
-            <div className="inline-flex items-center px-4 py-2 bg-white/20 border border-white/30 rounded-full">
-              <Zap className="w-4 h-4 text-white mr-2" />
-              <span className="text-white text-sm font-medium">Ready to Start?</span>
+            <div className="inline-flex items-center px-4 py-2 bg-white/90 border border-blue-200 rounded-full">
+              <Zap className="w-4 h-4 text-blue-600 mr-2" />
+              <span className="text-blue-700 text-sm font-medium">Ready to Start?</span>
             </div>
             
             <h2 className="text-4xl lg:text-6xl font-bold text-white leading-tight">
               Achieve Your Target Score Today
             </h2>
-            <p className="text-xl text-blue-100 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-xl text-white/90 max-w-2xl mx-auto leading-relaxed">
               Join thousands of successful students and start your English learning journey with our AI-powered dictation platform.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               <Link
                 to="/register"
-                className="px-10 py-4 bg-white text-blue-600 rounded-2xl font-bold text-lg hover:bg-blue-50 transition-all duration-200 flex items-center justify-center space-x-2 shadow-xl"
+                className="px-10 py-4 bg-white text-blue-600 rounded-2xl font-bold text-lg hover:bg-blue-50 transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg"
               >
                 <span>Get Started Free</span>
                 <ArrowRight className="w-5 h-5" />
               </Link>
               <Link
                 to="/login"
-                className="px-10 py-4 bg-white/10 backdrop-blur-sm border border-white/30 text-white rounded-2xl font-semibold text-lg hover:bg-white/20 transition-all duration-200"
+                className="px-10 py-4 bg-white/20 backdrop-blur-sm border border-white/40 text-white rounded-2xl font-semibold text-lg hover:bg-white/30 transition-all duration-200"
               >
                 Sign In
               </Link>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-8 text-blue-100">
+            <div className="flex flex-wrap items-center justify-center gap-8 text-white/80">
               <div className="flex items-center space-x-2">
                 <CheckCircle className="w-5 h-5" />
                 <span>Free to start</span>

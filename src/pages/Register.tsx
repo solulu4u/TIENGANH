@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { BookOpen, ArrowRight, CheckCircle, User, Mail, Lock, Target } from 'lucide-react';
+import { BookOpen, ArrowRight, User, Mail, Lock, Target } from 'lucide-react';
 import { registerUser } from '../utils/api';
 
 const Register: React.FC = () => {
@@ -71,10 +71,7 @@ const Register: React.FC = () => {
         targetScore: formData.targetScore
       });
 
-      console.log('Register response:', response);
-
       if (response.success) {
-        // Auto-login after successful registration
         const success = await login(formData.email, formData.password);
         if (!success) {
           setErrors({ general: 'Registration successful but login failed. Please try logging in manually.' });
@@ -83,7 +80,6 @@ const Register: React.FC = () => {
         setErrors({ general: response.message || 'Registration failed. Please try again.' });
       }
     } catch (error) {
-      console.error('Register error:', error);
       setErrors({ general: 'Registration failed. Please try again.' });
     } finally {
       setIsLoading(false);
@@ -97,232 +93,208 @@ const Register: React.FC = () => {
       [name]: name === 'targetScore' ? parseFloat(value) : value
     }));
     
-    // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
 
-  const features = [
-    'AI-powered personalized feedback',
-    'Comprehensive skill training',
-    'Real-time progress tracking',
-    'Expert-designed curriculum'
-  ];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 flex items-center justify-center p-4">
-      <div className="max-w-6xl w-full grid lg:grid-cols-2 gap-8">
-        {/* Left side - Branding */}
-        <div className="flex flex-col justify-center text-white space-y-8">
-          <div className="space-y-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                <BookOpen className="w-6 h-6 text-white" />
-              </div>
-              <h1 className="text-4xl font-bold">IELTS Master</h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full">
+        <div className="bg-white/90 backdrop-blur-sm rounded-3xl shadow-xl border border-blue-100 p-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <BookOpen className="w-8 h-8 text-white" />
             </div>
-            <p className="text-xl text-blue-100">
-              Join thousands of students achieving their IELTS goals
-            </p>
+            <h1 className="text-3xl font-bold text-slate-800 mb-2">Create Account</h1>
+            <p className="text-slate-600">Start your English learning journey today</p>
           </div>
 
-          <div className="space-y-4">
-            {features.map((feature, index) => (
-              <div key={index} className="flex items-center space-x-3">
-                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
-                <span className="text-blue-100">{feature}</span>
-              </div>
-            ))}
-          </div>
+          {/* Error Messages */}
+          {errors.general && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-red-600 text-sm">{errors.general}</p>
+            </div>
+          )}
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-            <div className="flex items-center space-x-4 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full flex items-center justify-center">
-                <span className="text-slate-900 font-bold text-lg">SC</span>
+          {/* Registration Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="fullName" className="block text-sm font-medium text-slate-700 mb-2">
+                Full Name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="fullName"
+                  name="fullName"
+                  type="text"
+                  value={formData.fullName}
+                  onChange={handleInputChange}
+                  className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 ${
+                    errors.fullName ? 'border-red-300' : 'border-slate-200'
+                  }`}
+                  placeholder="Enter your full name"
+                />
               </div>
+              {errors.fullName && <p className="mt-1 text-sm text-red-600">{errors.fullName}</p>}
+            </div>
+
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 ${
+                    errors.email ? 'border-red-300' : 'border-slate-200'
+                  }`}
+                  placeholder="Enter your email"
+                />
+              </div>
+              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <h4 className="font-semibold">Sarah Chen</h4>
-                <div className="flex items-center space-x-1">
-                  <Target className="w-4 h-4 text-yellow-400" />
-                  <span className="text-yellow-400 font-bold">IELTS 8.5</span>
+                <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className={`w-full pl-9 pr-3 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 text-sm ${
+                      errors.password ? 'border-red-300' : 'border-slate-200'
+                    }`}
+                    placeholder="Password"
+                  />
                 </div>
+                {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password}</p>}
+              </div>
+
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-700 mb-2">
+                  Confirm
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    className={`w-full pl-9 pr-3 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 text-sm ${
+                      errors.confirmPassword ? 'border-red-300' : 'border-slate-200'
+                    }`}
+                    placeholder="Confirm"
+                  />
+                </div>
+                {errors.confirmPassword && <p className="mt-1 text-xs text-red-600">{errors.confirmPassword}</p>}
               </div>
             </div>
-            <p className="text-blue-100 italic">
-              "IELTS Master's AI feedback helped me identify my weak points and improve systematically. Highly recommended!"
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="level" className="block text-sm font-medium text-slate-700 mb-2">
+                  Current Level
+                </label>
+                <select
+                  id="level"
+                  name="level"
+                  value={formData.level}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 text-sm"
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="targetScore" className="block text-sm font-medium text-slate-700 mb-2">
+                  Target Score
+                </label>
+                <div className="relative">
+                  <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    id="targetScore"
+                    name="targetScore"
+                    type="number"
+                    min="4.0"
+                    max="9.0"
+                    step="0.5"
+                    value={formData.targetScore}
+                    onChange={handleInputChange}
+                    className={`w-full pl-9 pr-3 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-white/50 text-sm ${
+                      errors.targetScore ? 'border-red-300' : 'border-slate-200'
+                    }`}
+                    placeholder="7.0"
+                  />
+                </div>
+                {errors.targetScore && <p className="mt-1 text-xs text-red-600">{errors.targetScore}</p>}
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 text-white py-3 px-4 rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-600 focus:ring-4 focus:ring-blue-500/20 transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50"
+            >
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>Create Account</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Footer */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-slate-600">
+              Already have an account?{' '}
+              <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium transition-colors">
+                Sign in here
+              </Link>
             </p>
           </div>
         </div>
 
-        {/* Right side - Registration form */}
-        <div className="flex items-center justify-center">
-          <div className="w-full max-w-md">
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl p-8">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-slate-800 mb-2">Create Your Account</h2>
-                <p className="text-slate-600">Start your IELTS journey today</p>
-              </div>
-
-              {errors.general && (
-                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-red-600 text-sm">{errors.general}</p>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 gap-6">
-                  <div>
-                    <label htmlFor="fullName" className="block text-sm font-medium text-slate-700 mb-2">
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        id="fullName"
-                        name="fullName"
-                        type="text"
-                        value={formData.fullName}
-                        onChange={handleInputChange}
-                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                          errors.fullName ? 'border-red-300' : 'border-slate-300'
-                        }`}
-                        placeholder="Enter your full name"
-                      />
-                    </div>
-                    {errors.fullName && <p className="mt-1 text-sm text-red-600">{errors.fullName}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-2">
-                      Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        id="email"
-                        name="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                          errors.email ? 'border-red-300' : 'border-slate-300'
-                        }`}
-                        placeholder="Enter your email"
-                      />
-                    </div>
-                    {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-2">
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        id="password"
-                        name="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                          errors.password ? 'border-red-300' : 'border-slate-300'
-                        }`}
-                        placeholder="Create a password"
-                      />
-                    </div>
-                    {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-700 mb-2">
-                      Confirm Password
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        type="password"
-                        value={formData.confirmPassword}
-                        onChange={handleInputChange}
-                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                          errors.confirmPassword ? 'border-red-300' : 'border-slate-300'
-                        }`}
-                        placeholder="Confirm your password"
-                      />
-                    </div>
-                    {errors.confirmPassword && <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="level" className="block text-sm font-medium text-slate-700 mb-2">
-                      Current Level
-                    </label>
-                    <select
-                      id="level"
-                      name="level"
-                      value={formData.level}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    >
-                      <option value="beginner">Beginner</option>
-                      <option value="intermediate">Intermediate</option>
-                      <option value="advanced">Advanced</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="targetScore" className="block text-sm font-medium text-slate-700 mb-2">
-                      Target IELTS Score
-                    </label>
-                    <div className="relative">
-                      <Target className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                      <input
-                        id="targetScore"
-                        name="targetScore"
-                        type="number"
-                        min="4.0"
-                        max="9.0"
-                        step="0.5"
-                        value={formData.targetScore}
-                        onChange={handleInputChange}
-                        className={`w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                          errors.targetScore ? 'border-red-300' : 'border-slate-300'
-                        }`}
-                        placeholder="7.0"
-                      />
-                    </div>
-                    {errors.targetScore && <p className="mt-1 text-sm text-red-600">{errors.targetScore}</p>}
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 focus:ring-4 focus:ring-blue-500/50 transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <span>Create Account</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <div className="mt-6 text-center">
-                <p className="text-sm text-slate-600">
-                  Already have an account?{' '}
-                  <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">
-                    Sign in here
-                  </Link>
-                </p>
-              </div>
+        {/* Bottom Benefits */}
+        <div className="mt-8 grid grid-cols-3 gap-4 text-center">
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-blue-100">
+            <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center mx-auto mb-2">
+              <BookOpen className="w-4 h-4 text-emerald-600" />
             </div>
+            <p className="text-xs text-slate-600 font-medium">Free to Start</p>
+          </div>
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-blue-100">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-2">
+              <Target className="w-4 h-4 text-blue-600" />
+            </div>
+            <p className="text-xs text-slate-600 font-medium">AI Powered</p>
+          </div>
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-blue-100">
+            <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center mx-auto mb-2">
+              <User className="w-4 h-4 text-violet-600" />
+            </div>
+            <p className="text-xs text-slate-600 font-medium">Expert Content</p>
           </div>
         </div>
       </div>
