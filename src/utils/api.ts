@@ -32,7 +32,15 @@ export const apiCall = async <T = any>(
 
   try {
     const response = await fetch(url, defaultOptions);
-    const data = await response.json();
+    let data: any = null;
+    const text = await response.text();
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        // Không phải JSON, giữ nguyên data = null
+      }
+    }
     
     console.log('API Response:', {
       status: response.status,
@@ -41,15 +49,15 @@ export const apiCall = async <T = any>(
     });
     
     // Log validation errors if any
-    if (data.errors) {
+    if (data?.errors) {
       console.log('Validation Errors:', data.errors);
     }
     
     return {
       success: response.ok,
       status: response.status,
-      data: data.data || data,
-      message: data.message || (response.ok ? 'Success' : 'Request failed')
+      data: data?.data || data,
+      message: data?.message || (response.ok ? 'Success' : 'Request failed')
     };
   } catch (error) {
     console.error('API Error:', error);
@@ -153,4 +161,143 @@ export const getCategoriesBySkillName = async (skillName: string): Promise<ApiRe
 
 export const getLessonsByCategoryTitle = async (title: string): Promise<ApiResponse<any[]>> => {
   return apiCall<any[]>(`/api/lessons/category-title/${encodeURIComponent(title)}`);
+};
+
+// ========== MULTIPLAYER API FUNCTIONS ==========
+
+// Create a new game room
+export const createGameRoom = async (data: {
+  roomName: string;
+  maxPlayers: number;
+  categoryId: string;
+}): Promise<ApiResponse<string>> => {
+  return apiCall<string>('/api/GameRooms/create', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
+// Get active rooms
+export const getActiveRooms = async (params?: {
+  searchTerm?: string;
+  categoryId?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<ApiResponse<any[]>> => {
+  const queryParams = new URLSearchParams();
+  if (params?.searchTerm) queryParams.append('searchTerm', params.searchTerm);
+  if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+  if (params?.page) queryParams.append('page', params.page.toString());
+  if (params?.pageSize) queryParams.append('pageSize', params.pageSize.toString());
+  
+  const queryString = queryParams.toString();
+  const endpoint = `/api/GameRooms/active${queryString ? `?${queryString}` : ''}`;
+  
+  return apiCall<any[]>(endpoint);
+};
+
+// Join a game room
+export const joinGameRoom = async (roomId: string): Promise<ApiResponse<string>> => {
+  return apiCall<string>('/api/GameRooms/join', {
+    method: 'POST',
+    body: JSON.stringify({ roomId }),
+  });
+};
+
+// Leave a game room
+export const leaveGameRoom = async (roomId: string): Promise<ApiResponse<string>> => {
+  return apiCall<string>('/api/GameRooms/leave', {
+    method: 'POST',
+    body: JSON.stringify({ roomId }),
+  });
+};
+
+// Get room details
+export const getRoomDetails = async (roomId: string): Promise<ApiResponse<any>> => {
+  const response = await apiCall<any>(`/api/GameRooms/${roomId}`);
+  
+  if (response.success && response.data) {
+    // Transform backend response to frontend format
+    const backendRoom = response.data;
+    const frontendRoom = {
+      id: backendRoom.id,
+      name: backendRoom.roomName || backendRoom.name,
+      hostId: backendRoom.hostId,
+      hostName: backendRoom.hostName,
+      players: backendRoom.players?.map((p: any) => ({
+        id: p.userId || p.id,
+        name: p.userName || p.name,
+        avatar: p.avatar,
+        isHost: p.isHost,
+        isReady: p.isReady,
+        score: p.score,
+        currentProgress: p.currentProgress || 0,
+        status: p.status,
+        joinedAt: p.joinedAt
+      })) || [],
+      maxPlayers: backendRoom.maxPlayers,
+      status: backendRoom.status,
+      currentSentence: backendRoom.currentSentence || 0,
+      categoryId: backendRoom.categoryId,
+      categoryTitle: backendRoom.categoryTitle,
+      createdAt: new Date(backendRoom.createdAt),
+      // Backend fields
+      roomName: backendRoom.roomName,
+      hostAvatar: backendRoom.hostAvatar,
+      currentPlayers: backendRoom.currentPlayers,
+      selectedLessonId: backendRoom.selectedLessonId,
+      selectedLessonTitle: backendRoom.selectedLessonTitle,
+      categoryDescription: backendRoom.categoryDescription,
+      categoryDifficult: backendRoom.categoryDifficult,
+      createdBy: backendRoom.createdBy
+    };
+    
+    return {
+      ...response,
+      data: frontendRoom
+    };
+  }
+  
+  return response;
+};
+
+// Get room players
+export const getRoomPlayers = async (roomId: string): Promise<ApiResponse<any[]>> => {
+  return apiCall<any[]>(`/api/GameRooms/${roomId}/players`);
+};
+
+// Toggle ready status
+export const toggleReadyStatus = async (roomId: string): Promise<ApiResponse<any>> => {
+  return apiCall<any>(`/api/GameRooms/${roomId}/ready`, {
+    method: 'PATCH',
+  });
+};
+
+// Select lesson for room
+export const selectLesson = async (roomId: string, lessonId: string): Promise<ApiResponse<boolean>> => {
+  return apiCall<boolean>(`/api/GameRooms/${roomId}/select-lesson`, {
+    method: 'PATCH',
+    body: JSON.stringify({ lessonId }),
+  });
+};
+
+// Update room settings
+export const updateRoomSettings = async (roomId: string, settings: {
+  timeLimit: number;
+  maxRetries: number;
+  showRealTimeScore: boolean;
+  allowHints: boolean;
+}): Promise<ApiResponse<boolean>> => {
+  return apiCall<boolean>(`/api/GameRooms/${roomId}/settings`, {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  });
+};
+
+// Start game session
+export const startGameSession = async (roomId: string, lessonId: string): Promise<ApiResponse<any>> => {
+  return apiCall<any>(`/api/GameRooms/${roomId}/game/start`, {
+    method: 'POST',
+    body: JSON.stringify({ lessonId }),
+  });
 }; 

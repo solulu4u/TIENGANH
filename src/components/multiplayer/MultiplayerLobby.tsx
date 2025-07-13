@@ -12,135 +12,102 @@ import {
     ArrowRight,
     Copy,
     Check,
+    Search,
+    Filter,
 } from "lucide-react"
-import { sampleRooms } from "../../data/multiplayerSample"
-import type { Room } from "../../types/multiplayer"
+import { getActiveRooms, joinGameRoom } from "../../utils/api"
+import { GameRoomListDTO } from "../../types/multiplayer"
+import CreateRoomModal from "./CreateRoomModal"
 
 const MultiplayerLobby: React.FC = () => {
     console.log("[MultiplayerLobby] Render")
     const navigate = useNavigate()
     const [showCreateRoom, setShowCreateRoom] = useState(false)
     const [showJoinRoom, setShowJoinRoom] = useState(false)
-    const [rooms, setRooms] = useState<Room[]>(sampleRooms)
+    const [rooms, setRooms] = useState<GameRoomListDTO[]>([])
     const [joinCode, setJoinCode] = useState("")
-    const [newRoomName, setNewRoomName] = useState("")
-    const [copied, setCopied] = useState(false)
-    const [categories, setCategories] = useState<any[]>([])
-    const [selectedCategory, setSelectedCategory] = useState<any>(null)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string>("")
+    const [searchTerm, setSearchTerm] = useState("")
+    const [selectedCategory, setSelectedCategory] = useState<string>("")
 
-    // WebSocket connection
-    // XÓA: const { isConnected, lastMessage, sendMessage, error } = useWebSocket('ws://localhost:8080/multiplayer');
-
-    // XÓA: useEffect(() => {
-    //   if (lastMessage) {
-    //     handleWebSocketMessage(lastMessage);
-    //   }
-    // }, [lastMessage]);
-
-    // XÓA: const handleWebSocketMessage = (message: any) => {
-    //   switch (message.type) {
-    //     case 'room_created':
-    //       setRooms(prev => [...prev, message.data]);
-    //       break;
-    //     case 'room_updated':
-    //       setRooms(prev => prev.map(room =>
-    //         room.id === message.data.id ? message.data : room
-    //       ));
-    //       break;
-    //     case 'room_joined':
-    //       navigate(`/dashboard/multiplayer/room/${message.data.roomId}`);
-    //       break;
-    //     default:
-    //       break;
-    //   }
-    // };
-
-    // Đảm bảo chỉ fetch categories khi showCreateRoom true, không fetch lessons ở đây.
+    // Load active rooms
     useEffect(() => {
-        console.log(
-            "[MultiplayerLobby] useEffect showCreateRoom",
-            showCreateRoom,
-            "categories.length",
-            categories.length
-        )
-        if (showCreateRoom && categories.length === 0) {
-            fetch("http://localhost:5285/api/categories/skill/Dictation")
-                .then(res => res.json())
-                .then(data => {
-                    console.log(
-                        "[MultiplayerLobby] categories API response:",
-                        data
-                    )
-                    if (data.success && data.data) setCategories(data.data)
-                })
-                .catch(err => {
-                    console.error(
-                        "[MultiplayerLobby] categories fetch error:",
-                        err
-                    )
-                })
+        loadActiveRooms()
+    }, [searchTerm, selectedCategory])
+
+    const loadActiveRooms = async () => {
+        setLoading(true)
+        try {
+            const response = await getActiveRooms({
+                searchTerm: searchTerm || undefined,
+                categoryId: selectedCategory || undefined,
+                page: 1,
+                pageSize: 20
+            })
+            
+            if (response.success && response.data) {
+                setRooms(response.data)
+            } else {
+                setError(response.message || 'Failed to load rooms')
+            }
+        } catch (error) {
+            setError('Network error occurred')
+        } finally {
+            setLoading(false)
         }
-    }, [showCreateRoom, categories.length])
-
-    const createRoom = () => {
-        console.log(
-            "[MultiplayerLobby] createRoom",
-            newRoomName,
-            selectedCategory
-        )
-        if (!newRoomName.trim() || !selectedCategory) return
-
-        const roomData: Room = {
-            id: `room-${rooms.length + 1}`,
-            name: newRoomName,
-            hostId: "sample-host",
-            hostName: "Sample Host",
-            players: [],
-            maxPlayers: 6,
-            status: "waiting",
-            currentSentence: 0,
-            settings: {
-                timeLimit: 60,
-                maxRetries: 2,
-                showRealTimeScore: true,
-                allowHints: true,
-                lessonSelection: "host_choice",
-            },
-            createdAt: new Date(),
-            categoryId: selectedCategory.id,
-            categoryTitle: selectedCategory.title,
-        }
-
-        setRooms(prev => [...prev, roomData])
-        console.log("[MultiplayerLobby] Room created:", roomData)
-
-        setNewRoomName("")
-        setShowCreateRoom(false)
-        setSelectedCategory(null)
     }
 
-    const joinRoom = (roomId?: string) => {
-        const targetRoomId = roomId || joinCode
-        console.log("[MultiplayerLobby] joinRoom", targetRoomId)
-        if (!targetRoomId) return
-        const foundRoom = rooms.find(r => r.id === targetRoomId)
-        console.log("[MultiplayerLobby] foundRoom:", foundRoom)
-        if (foundRoom) {
-            navigate(`/dashboard/multiplayer/room/${targetRoomId}`)
+    const handleJoinRoom = async (roomId: string) => {
+        setLoading(true);
+        setError('');
+        try {
+            const response = await joinGameRoom(roomId);
+            // Nếu join thành công, luôn vào trang phòng
+            if (response.success) {
+                navigate(`/dashboard/multiplayer/room/${roomId}`);
+                return;
+            }
+            // Nếu lỗi 'already in room', parse roomId và vào phòng đó
+            if (response.message?.includes('already in room')) {
+                const match = response.message.match(/room ([a-f0-9-]{36})/);
+                if (match) {
+                    const existingRoomId = match[1];
+                    navigate(`/dashboard/multiplayer/room/${existingRoomId}`);
+                    return;
+                } else {
+                    setError('Bạn đang ở trong một phòng khác. Vui lòng rời phòng đó trước khi tham gia phòng mới.');
+                    return;
+                }
+            }
+            // Các lỗi khác
+            setError(response.message || 'Không thể tham gia phòng. Vui lòng thử lại.');
+        } catch (error) {
+            setError('Network error');
+        } finally {
+            setLoading(false);
         }
-        setJoinCode("")
-        setShowJoinRoom(false)
+    };
+
+    const handleCreateRoom = (roomId: string) => {
+        navigate(`/dashboard/multiplayer/room/${roomId}`)
     }
 
     const copyRoomCode = (roomId: string) => {
         navigator.clipboard.writeText(roomId)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-        console.log("[MultiplayerLobby] Copied room code:", roomId)
+        // Show temporary success message
+        const originalText = document.getElementById(`copy-${roomId}`)?.textContent
+        const button = document.getElementById(`copy-${roomId}`)
+        if (button) {
+            button.textContent = 'Copied!'
+            setTimeout(() => {
+                if (button) button.textContent = originalText || 'Copy'
+            }, 2000)
+        }
     }
 
     const getStatusColor = (status: string) => {
-        switch (status) {
+        switch (status.toLowerCase()) {
             case "waiting":
                 return "bg-green-100 text-green-800"
             case "starting":
@@ -164,16 +131,9 @@ const MultiplayerLobby: React.FC = () => {
                             Multiplayer Dictation
                         </h1>
                         <p className="text-xl text-slate-600">
-                            Challenge friends and compete in real-time dictation
-                            battles
+                            Challenge friends and compete in real-time dictation battles
                         </p>
                     </div>
-                    {/* XÓA: <div className="flex items-center space-x-2">
-            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            <span className="text-sm text-slate-600">
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div> */}
                 </div>
             </div>
 
@@ -200,15 +160,15 @@ const MultiplayerLobby: React.FC = () => {
                     </button>
                 </div>
 
-                <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl p-8 text-white">
+                <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl p-8 text-white">
                     <div className="flex items-center space-x-4 mb-6">
                         <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
                             <Users className="w-8 h-8" />
                         </div>
                         <div>
                             <h3 className="text-2xl font-bold">Join Room</h3>
-                            <p className="text-purple-100">
-                                Enter a room code to join
+                            <p className="text-green-100">
+                                Enter an existing room with code
                             </p>
                         </div>
                     </div>
@@ -217,233 +177,181 @@ const MultiplayerLobby: React.FC = () => {
                         className="w-full bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 text-white py-3 px-6 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center space-x-2"
                     >
                         <Users className="w-5 h-5" />
-                        <span>Join with Code</span>
+                        <span>Join Room</span>
                     </button>
                 </div>
             </div>
 
-            {/* Active Rooms */}
-            <div className="mb-8">
-                <h2 className="text-2xl font-bold text-slate-800 mb-6">
-                    Active Rooms
-                </h2>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {rooms.map(room => (
-                        <div
-                            key={room.id}
-                            className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg transition-all duration-200"
-                        >
-                            <div className="p-6">
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="flex-1">
-                                        <div className="flex items-center space-x-3 mb-2">
-                                            <h3 className="text-xl font-semibold text-slate-800">
-                                                {room.name}
-                                            </h3>
-                                            <span
-                                                className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                                                    room.status
-                                                )}`}
-                                            >
-                                                {room.status}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center space-x-2 text-sm text-slate-600 mb-3">
-                                            <Crown className="w-4 h-4 text-yellow-500" />
-                                            <span>Host: {room.hostName}</span>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => copyRoomCode(room.id)}
-                                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                        title="Copy room code"
-                                    >
-                                        {copied ? (
-                                            <Check className="w-4 h-4 text-green-500" />
-                                        ) : (
-                                            <Copy className="w-4 h-4" />
-                                        )}
-                                    </button>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-4 mb-4">
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <Users className="w-5 h-5 text-slate-600 mx-auto mb-1" />
-                                        <div className="text-sm font-medium text-slate-800">
-                                            {room.players.length}/
-                                            {room.maxPlayers}
-                                        </div>
-                                        <div className="text-xs text-slate-500">
-                                            Players
-                                        </div>
-                                    </div>
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <Clock className="w-5 h-5 text-slate-600 mx-auto mb-1" />
-                                        <div className="text-sm font-medium text-slate-800">
-                                            {room.settings.timeLimit}s
-                                        </div>
-                                        <div className="text-xs text-slate-500">
-                                            Time Limit
-                                        </div>
-                                    </div>
-                                    <div className="text-center p-3 bg-slate-50 rounded-lg">
-                                        <Zap className="w-5 h-5 text-slate-600 mx-auto mb-1" />
-                                        <div className="text-sm font-medium text-slate-800">
-                                            {room.settings.lessonSelection ===
-                                            "random"
-                                                ? "Random"
-                                                : "Host Choice"}
-                                        </div>
-                                        <div className="text-xs text-slate-500">
-                                            Mode
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center space-x-2 mb-4">
-                                    {room.players.slice(0, 4).map(player => (
-                                        <div
-                                            key={player.id}
-                                            className="flex items-center space-x-2"
-                                        >
-                                            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
-                                                <span className="text-white text-xs font-bold">
-                                                    {player.avatar}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {room.players.length > 4 && (
-                                        <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center">
-                                            <span className="text-slate-600 text-xs font-bold">
-                                                +{room.players.length - 4}
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <button
-                                    onClick={() => joinRoom(room.id)}
-                                    disabled={
-                                        room.status !== "waiting" ||
-                                        room.players.length >= room.maxPlayers
-                                    }
-                                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
-                                >
-                                    <Play className="w-4 h-4" />
-                                    <span>
-                                        {room.status === "waiting"
-                                            ? "Join Room"
-                                            : room.status === "playing"
-                                            ? "In Progress"
-                                            : "Room Full"}
-                                    </span>
-                                </button>
-                            </div>
-                        </div>
-                    ))}
+            {/* Search and Filter */}
+            <div className="mb-6 flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                        type="text"
+                        placeholder="Search rooms..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                </div>
+                <div className="flex items-center space-x-2">
+                    <Filter className="w-5 h-5 text-gray-500" />
+                    <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        <option value="">All Categories</option>
+                        <option value="dictation">Dictation</option>
+                        <option value="grammar">Grammar</option>
+                        <option value="vocabulary">Vocabulary</option>
+                    </select>
                 </div>
             </div>
 
-            {/* Create Room Modal */}
-            {showCreateRoom && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-                        <h3 className="text-2xl font-bold text-slate-800 mb-6">
-                            Create New Room
-                        </h3>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Room Name
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newRoomName}
-                                    onChange={e =>
-                                        setNewRoomName(e.target.value)
-                                    }
-                                    placeholder="Enter room name..."
-                                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
-                                    Chủ đề
-                                </label>
-                                <select
-                                    value={selectedCategory?.id || ""}
-                                    onChange={e => {
-                                        const cat = categories.find(
-                                            c => c.id === e.target.value
-                                        )
-                                        setSelectedCategory(cat)
-                                    }}
-                                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                >
-                                    <option value="">Chọn chủ đề...</option>
-                                    {categories.map(cat => (
-                                        <option key={cat.id} value={cat.id}>
-                                            {cat.title}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex space-x-3">
-                                <button
-                                    onClick={() => setShowCreateRoom(false)}
-                                    className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={createRoom}
-                                    disabled={
-                                        !newRoomName.trim() || !selectedCategory
-                                    }
-                                    className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 transition-all duration-200"
-                                >
-                                    Create
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+            {/* Error Message */}
+            {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-600">{error}</p>
                 </div>
             )}
 
+            {/* Rooms List */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-2xl font-bold text-slate-800">
+                        Active Rooms ({rooms.length})
+                    </h2>
+                    {loading && (
+                        <div className="flex items-center space-x-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                            <span className="text-sm text-gray-600">Loading...</span>
+                        </div>
+                    )}
+                </div>
+
+                {rooms.length === 0 && !loading ? (
+                    <div className="text-center py-12">
+                        <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                        <h3 className="text-xl font-semibold text-gray-600 mb-2">
+                            No active rooms found
+                        </h3>
+                        <p className="text-gray-500">
+                            Be the first to create a room and start playing!
+                        </p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {rooms.map((room) => (
+                            <div
+                                key={room.id}
+                                className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200"
+                            >
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="flex-1">
+                                        <h3 className="text-lg font-semibold text-slate-800 mb-1">
+                                            {room.roomName}
+                                        </h3>
+                                        <p className="text-sm text-gray-600">
+                                            Hosted by {room.hostName}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <span
+                                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                                                room.status
+                                            )}`}
+                                        >
+                                            {room.status}
+                                        </span>
+                                        <button
+                                            id={`copy-${room.id}`}
+                                            onClick={() => copyRoomCode(room.id)}
+                                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3 mb-4">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600">Category</span>
+                                        <span className="font-medium">{room.categoryName}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600">Players</span>
+                                        <span className="font-medium">
+                                            {room.currentPlayers}/{room.maxPlayers}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600">Created</span>
+                                        <span className="font-medium">
+                                            {new Date(room.createdAt).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={() => handleJoinRoom(room.id)}
+                                    disabled={loading || room.currentPlayers >= room.maxPlayers}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                                >
+                                    <Play className="w-4 h-4" />
+                                    <span>
+                                        {room.currentPlayers >= room.maxPlayers ? 'Full' : 'Join Room'}
+                                    </span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
             {/* Join Room Modal */}
             {showJoinRoom && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-                        <h3 className="text-2xl font-bold text-slate-800 mb-6">
-                            Join Room
-                        </h3>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-gray-900">Join Room</h2>
+                            <button
+                                onClick={() => setShowJoinRoom(false)}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Room Code
                                 </label>
                                 <input
                                     type="text"
                                     value={joinCode}
-                                    onChange={e => setJoinCode(e.target.value)}
-                                    placeholder="Enter room code..."
-                                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                    onChange={(e) => setJoinCode(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Enter room code"
                                 />
                             </div>
-                            <div className="flex space-x-3">
+
+                            <div className="flex space-x-3 pt-4">
                                 <button
                                     onClick={() => setShowJoinRoom(false)}
-                                    className="flex-1 px-4 py-3 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500"
                                 >
                                     Cancel
                                 </button>
                                 <button
-                                    onClick={() => joinRoom()}
-                                    disabled={!joinCode.trim()}
-                                    className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 transition-all duration-200"
+                                    onClick={() => handleJoinRoom(joinCode)}
+                                    disabled={!joinCode.trim() || loading}
+                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                                 >
-                                    Join
+                                    {loading ? 'Joining...' : 'Join Room'}
                                 </button>
                             </div>
                         </div>
@@ -451,12 +359,12 @@ const MultiplayerLobby: React.FC = () => {
                 </div>
             )}
 
-            {/* Error Message */}
-            {/* XÓA: {error && (
-        <div className="fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg">
-          {error}
-        </div>
-      )} */}
+            {/* Create Room Modal */}
+            <CreateRoomModal
+                isOpen={showCreateRoom}
+                onClose={() => setShowCreateRoom(false)}
+                onRoomCreated={handleCreateRoom}
+            />
         </div>
     )
 }
