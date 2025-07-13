@@ -107,11 +107,15 @@ export interface GameRoomListDTO {
   id: string;
   roomName: string;
   hostName: string;
-  categoryName: string;
+  hostAvatar: string;
+  playerCount: number;
   maxPlayers: number;
-  currentPlayers: number;
   status: string;
+  categoryTitle: string;
+  categoryDescription: string;
   createdAt: string;
+  settings?: GameRoomSettingsDTO;
+  players: PlayerInRoomDTO[];
 }
 
 export interface GetRoomDetailsDTO {
@@ -119,14 +123,41 @@ export interface GetRoomDetailsDTO {
   roomName: string;
   hostId: string;
   hostName: string;
-  categoryId: string;
-  categoryName: string;
-  maxPlayers: number;
+  hostAvatar: string;
   status: string;
+  maxPlayers: number;
+  currentPlayers: number;
   selectedLessonId?: string;
-  selectedLessonName?: string;
-  players: Player[];
+  selectedLessonTitle?: string;
+  currentSentence: number;
+  categoryId: string;
+  categoryTitle: string;
+  categoryDescription: string;
+  categoryDifficult: string;
   createdAt: string;
+  createdBy: string;
+  players: PlayerInRoomDTO[];
+  settings?: GameRoomSettingsDTO;
+}
+
+export interface PlayerInRoomDTO {
+  userId: string;
+  userName: string;
+  avatar: string;
+  isHost: boolean;
+  isReady: boolean;
+  score: number;
+  currentProgress: number;
+  status: string;
+  joinedAt: string;
+}
+
+export interface GameRoomSettingsDTO {
+  timeLimit: number;
+  maxRetries: number;
+  showRealTimeScore: boolean;
+  allowHints: boolean;
+  lessonSelection: string; // "host_choice" or "random"
 }
 
 export interface PlayerDTO {
@@ -218,3 +249,16 @@ export type Room = {
     categoryDifficult?: string;
     createdBy?: string;
 };
+
+// GameState interface for multiplayer game
+export interface GameState {
+    currentSentence: number;
+    timeRemaining: number;
+    isPlaying: boolean;
+    leaderboard: Array<{
+        playerId: string;
+        playerName: string;
+        score: number;
+    }>;
+    totalSentences: number;
+}

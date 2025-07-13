@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { useAuth } from "../../contexts/AuthContext"
-import { sampleRooms, sampleGameResults } from "../../data/multiplayerSample"
+import { getRoomDetails, getLessonById } from "../../utils/api"
 import { compareWordsDetailed } from "../../utils/dictationUtils"
 import DictationAudioPlayer from "../lessons/DictationAudioPlayer"
 import type { Room, Player, GameState } from "../../types/multiplayer"
@@ -37,6 +37,8 @@ const MultiplayerGame: React.FC = () => {
     const [realTimeScores, setRealTimeScores] = useState<{
         [playerId: string]: number
     }>({})
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string>("")
 
     const { isConnected, lastMessage, sendMessage } = useWebSocket(
         "ws://localhost:8080/multiplayer"
@@ -46,35 +48,69 @@ const MultiplayerGame: React.FC = () => {
 
     useEffect(() => {
         console.log("[MultiplayerGame] useEffect roomId", roomId)
-        // Load room and lesson data
-        const foundRoom = sampleRooms.find(r => r.id === roomId)
-        console.log("[MultiplayerGame] foundRoom:", foundRoom)
-        if (foundRoom) {
-            setRoom(foundRoom)
-            // Mock lesson data
-            setCurrentLesson({
-                id: "story-1",
-                title: "The History of Coffee",
-                challenges: [
-                    {
-                        id: "1",
-                        content:
-                            "Coffee is one of the most popular beverages in the world today.",
-                        audioSrc: "/audio/coffee-1.mp3",
-                        timeStart: 0,
-                        timeEnd: 4.2,
-                    },
-                    {
-                        id: "2",
-                        content:
-                            "The story of coffee begins in ancient Ethiopia, where legend says a goat herder discovered the energizing effects of coffee beans.",
-                        audioSrc: "/audio/coffee-2.mp3",
-                        timeStart: 0,
-                        timeEnd: 6.8,
-                    },
-                    // Add more challenges...
-                ],
-            })
+        if (roomId) {
+            setLoading(true)
+            // Load room data
+            getRoomDetails(roomId)
+                .then(res => {
+                    if (res.success && res.data) {
+                        // Convert backend DTO to frontend Room type
+                        const roomData: Room = {
+                            id: res.data.id,
+                            name: res.data.roomName,
+                            hostId: res.data.hostId,
+                            hostName: res.data.hostName,
+                            players: res.data.players.map((p: any) => ({
+                                id: p.userId,
+                                name: p.userName,
+                                avatar: p.avatar,
+                                isHost: p.isHost,
+                                isReady: p.isReady,
+                                score: p.score,
+                                currentProgress: p.currentProgress,
+                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                joinedAt: p.joinedAt
+                            })),
+                            maxPlayers: res.data.maxPlayers,
+                            status: res.data.status,
+                            currentSentence: res.data.currentSentence,
+                            settings: res.data.settings,
+                            createdAt: new Date(res.data.createdAt),
+                            categoryId: res.data.categoryId,
+                            categoryTitle: res.data.categoryTitle,
+                            // Backend fields
+                            roomName: res.data.roomName,
+                            hostAvatar: res.data.hostAvatar,
+                            currentPlayers: res.data.currentPlayers,
+                            selectedLessonId: res.data.selectedLessonId,
+                            selectedLessonTitle: res.data.selectedLessonTitle,
+                            categoryDescription: res.data.categoryDescription,
+                            categoryDifficult: res.data.categoryDifficult,
+                            createdBy: res.data.createdBy
+                        }
+                        setRoom(roomData)
+
+                        // Load lesson data if selected
+                        if (res.data.selectedLessonId) {
+                            getLessonById(res.data.selectedLessonId)
+                                .then(lessonRes => {
+                                    if (lessonRes.success && lessonRes.data) {
+                                        setCurrentLesson(lessonRes.data)
+                                    }
+                                })
+                                .catch(err => {
+                                    console.error("Failed to load lesson:", err)
+                                })
+                        }
+                    } else {
+                        setError('Room not found')
+                    }
+                })
+                .catch(err => {
+                    console.error("Failed to load room:", err)
+                    setError('Network error')
+                })
+                .finally(() => setLoading(false))
         }
 
         // Start timer
@@ -96,7 +132,7 @@ const MultiplayerGame: React.FC = () => {
 
     const startTimer = () => {
         timerRef.current = setInterval(() => {
-            setGameState(prev => {
+            setGameState((prev: GameState) => {
                 if (prev.timeRemaining <= 1) {
                     // Time's up, auto-submit
                     if (!hasSubmitted) {
@@ -124,7 +160,7 @@ const MultiplayerGame: React.FC = () => {
                 }))
                 break
             case "next_sentence":
-                setGameState(prev => ({
+                setGameState((prev: GameState) => ({
                     ...prev,
                     currentSentence: prev.currentSentence + 1,
                 }))
@@ -144,9 +180,9 @@ const MultiplayerGame: React.FC = () => {
         if (timerRef.current) {
             clearInterval(timerRef.current)
         }
-        setGameState(prev => ({
+        setGameState((prev: GameState) => ({
             ...prev,
-            timeRemaining: room?.settings.timeLimit || 60,
+            timeRemaining: room?.settings?.timeLimit || 60,
         }))
         startTimer()
     }
@@ -180,7 +216,7 @@ const MultiplayerGame: React.FC = () => {
                 score,
                 isCorrect,
                 timeSpent:
-                    (room?.settings.timeLimit || 60) - gameState.timeRemaining,
+                    (room?.settings?.timeLimit || 60) - gameState.timeRemaining,
             },
         })
     }
@@ -192,9 +228,21 @@ const MultiplayerGame: React.FC = () => {
         return scores.findIndex(([id]) => id === playerId) + 1
     }
 
-    if (!room || !currentLesson) {
+    if (loading) {
+        return (
+            <div className="p-6 text-center">
+                <h2 className="text-xl font-semibold text-slate-800">
+                    Loading game...
+                </h2>
+            </div>
+        )
+    }
+
+    if (error || !room || !currentLesson) {
         console.log(
-            "[MultiplayerGame] Loading game... room:",
+            "[MultiplayerGame] Error or missing data - error:",
+            error,
+            "room:",
             room,
             "currentLesson:",
             currentLesson
@@ -202,8 +250,14 @@ const MultiplayerGame: React.FC = () => {
         return (
             <div className="p-6 text-center">
                 <h2 className="text-xl font-semibold text-slate-800">
-                    Loading game...
+                    {error || "Game data not found"}
                 </h2>
+                <button
+                    onClick={() => navigate("/dashboard/multiplayer")}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                    Back to Lobby
+                </button>
             </div>
         )
     }
@@ -225,54 +279,54 @@ const MultiplayerGame: React.FC = () => {
                         Leaderboard
                     </h3>
                     <div className="space-y-4">
-                        {sampleGameResults.finalScores.map((result, index) => (
-                            <div
-                                key={result.playerId}
-                                className={`flex items-center justify-between p-4 rounded-lg ${
-                                    index === 0
-                                        ? "bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200"
-                                        : index === 1
-                                        ? "bg-gradient-to-r from-gray-50 to-slate-50 border border-gray-200"
-                                        : index === 2
-                                        ? "bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200"
-                                        : "bg-slate-50 border border-slate-200"
-                                }`}
-                            >
-                                <div className="flex items-center space-x-4">
-                                    <div
-                                        className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
-                                            index === 0
-                                                ? "bg-yellow-500 text-white"
-                                                : index === 1
-                                                ? "bg-gray-400 text-white"
-                                                : index === 2
-                                                ? "bg-orange-500 text-white"
-                                                : "bg-slate-400 text-white"
-                                        }`}
-                                    >
-                                        {index + 1}
+                        {room.players
+                            .sort((a, b) => (realTimeScores[b.id] || 0) - (realTimeScores[a.id] || 0))
+                            .map((player, index) => (
+                                <div
+                                    key={player.id}
+                                    className={`flex items-center justify-between p-4 rounded-lg ${
+                                        index === 0
+                                            ? "bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200"
+                                            : index === 1
+                                            ? "bg-gradient-to-r from-gray-50 to-slate-50 border border-gray-200"
+                                            : index === 2
+                                            ? "bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200"
+                                            : "bg-slate-50 border border-slate-200"
+                                    }`}
+                                >
+                                    <div className="flex items-center space-x-4">
+                                        <div
+                                            className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
+                                                index === 0
+                                                    ? "bg-yellow-500 text-white"
+                                                    : index === 1
+                                                    ? "bg-gray-400 text-white"
+                                                    : index === 2
+                                                    ? "bg-orange-500 text-white"
+                                                    : "bg-slate-400 text-white"
+                                            }`}
+                                        >
+                                            {index + 1}
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-slate-800">
+                                                {player.name}
+                                            </div>
+                                            <div className="text-sm text-slate-600">
+                                                Score: {realTimeScores[player.id] || 0} points
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <div className="font-semibold text-slate-800">
-                                            {result.playerName}
+                                    <div className="text-right">
+                                        <div className="text-2xl font-bold text-slate-800">
+                                            {realTimeScores[player.id] || 0}
                                         </div>
                                         <div className="text-sm text-slate-600">
-                                            {result.correctAnswers}/
-                                            {result.totalAnswers} correct • Avg:{" "}
-                                            {result.averageTime}s
+                                            points
                                         </div>
                                     </div>
                                 </div>
-                                <div className="text-right">
-                                    <div className="text-2xl font-bold text-slate-800">
-                                        {result.totalScore}
-                                    </div>
-                                    <div className="text-sm text-slate-600">
-                                        points
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                            ))}
                     </div>
 
                     <div className="mt-8 text-center">

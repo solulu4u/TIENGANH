@@ -14,8 +14,7 @@ import {
     Zap,
 } from "lucide-react"
 import { useAuth } from "../../contexts/AuthContext"
-import { sampleRooms } from "../../data/multiplayerSample"
-import { getLessonsByCategoryTitle, getRoomDetails, updateRoomSettings } from "../../utils/api"
+import { getRoomDetails, getLessonsByCategoryTitle, updateRoomSettings } from "../../utils/api"
 import type { Room, Player } from "../../types/multiplayer"
 import DictationLessonForPK from "../lessons/DictationLessonForPK"
 
@@ -35,28 +34,6 @@ const MultiplayerRoom: React.FC = () => {
     const [pkStarted, setPkStarted] = useState(false)
     const [rankings, setRankings] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-
-    // Default settings when backend doesn't provide settings
-    const defaultSettings = {
-        timeLimit: 60,
-        maxRetries: 2,
-        showRealTimeScore: true,
-        allowHints: true,
-        lessonSelection: "host_choice"
-    };
-
-    // Get settings from room or use defaults
-    const roomSettings = room?.settings || defaultSettings;
-
-    const isHost = user?.id === room?.hostId
-
-    // Validation for starting game
-    const allPlayersReady = room?.players.every(player => player.isReady) || false;
-    const hasEnoughPlayers = (room?.players.length || 0) >= 2;
-    const hasSelectedLesson = selectedLesson !== null;
-    const canStartGame = isHost && allPlayersReady && hasEnoughPlayers && hasSelectedLesson;
 
     // Đặt fetchLessons ở ngoài useEffect, ngay sau khai báo state
     const fetchLessons = () => {
@@ -85,30 +62,72 @@ const MultiplayerRoom: React.FC = () => {
     useEffect(() => {
         console.log("[MultiplayerRoom] useEffect roomId", roomId)
         if (roomId) {
-            setLoading(true);
+            // Load room data
             getRoomDetails(roomId)
                 .then(res => {
                     if (res.success && res.data) {
-                        setRoom(res.data);
-                        setError('');
-                    } else {
-                        setRoom(null);
-                        setError('Room not found');
+                        // Convert backend DTO to frontend Room type
+                        const roomData: Room = {
+                            id: res.data.id,
+                            name: res.data.roomName,
+                            hostId: res.data.hostId,
+                            hostName: res.data.hostName,
+                            players: res.data.players.map((p: any) => ({
+                                id: p.userId,
+                                name: p.userName,
+                                avatar: p.avatar,
+                                isHost: p.isHost,
+                                isReady: p.isReady,
+                                score: p.score,
+                                currentProgress: p.currentProgress,
+                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                joinedAt: p.joinedAt
+                            })),
+                            maxPlayers: res.data.maxPlayers,
+                            status: res.data.status,
+                            currentSentence: res.data.currentSentence,
+                            settings: res.data.settings,
+                            createdAt: new Date(res.data.createdAt),
+                            categoryId: res.data.categoryId,
+                            categoryTitle: res.data.categoryTitle,
+                            // Backend fields
+                            roomName: res.data.roomName,
+                            hostAvatar: res.data.hostAvatar,
+                            currentPlayers: res.data.currentPlayers,
+                            selectedLessonId: res.data.selectedLessonId,
+                            selectedLessonTitle: res.data.selectedLessonTitle,
+                            categoryDescription: res.data.categoryDescription,
+                            categoryDifficult: res.data.categoryDifficult,
+                            createdBy: res.data.createdBy
+                        }
+                        setRoom(roomData)
+                        // Nếu lessonSelection là object (lesson), mới set. Nếu là string, set null.
+                        if (
+                            typeof res.data.settings?.lessonSelection === "object" &&
+                            res.data.settings.lessonSelection !== null
+                        ) {
+                            setSelectedLesson(res.data.settings.lessonSelection)
+                        } else {
+                            setSelectedLesson(null)
+                        }
                     }
                 })
-                .catch(() => {
-                    setRoom(null);
-                    setError('Network error');
+                .catch(err => {
+                    console.error("Failed to load room:", err)
                 })
-                .finally(() => setLoading(false));
         }
-    }, [roomId]);
+        // XÓA mọi fetch lessons trong useEffect khi vào phòng hoặc load room.
+        // Thêm hàm fetchLessons:
+        // Đảm bảo fetchLessons chỉ gọi khi room đã tồn tại
+    }, [roomId])
 
     useEffect(() => {
         // Gửi ranking ra ngoài
         // onRankingUpdate([...scores].sort((a, b) => b.score - a.score))
         console.log("[MultiplayerRoom] rankings updated:", rankings)
     }, [rankings])
+
+    const isHost = user?.id === room?.hostId
 
     // Fetch categories nếu là host và chưa có
     useEffect(() => {
@@ -149,9 +168,22 @@ const MultiplayerRoom: React.FC = () => {
         }
     }
 
-    if (loading) return <div className="p-8 text-center">Loading room...</div>;
-    if (error || !room) return <div className="p-8 text-center text-red-600">{error || 'Room not found'}</div>;
-
+    if (!room) {
+        console.log("[MultiplayerRoom] room is null, render not found")
+        return (
+            <div className="p-6 text-center">
+                <h2 className="text-xl font-semibold text-slate-800">
+                    Room not found
+                </h2>
+                <button
+                    onClick={() => navigate("/dashboard/multiplayer")}
+                    className="mt-4 text-blue-600 hover:text-blue-700"
+                >
+                    Back to Lobby
+                </button>
+            </div>
+        )
+    }
     // Nếu đã bắt đầu PK, render DictationLessonForPK và bảng xếp hạng
     if (pkStarted) {
         console.log("[MultiplayerRoom] pkStarted, render PKLessonWithRanking")
@@ -184,8 +216,8 @@ const MultiplayerRoom: React.FC = () => {
                             </h2>
                             <ol className="space-y-4">
                                 {(rankings.length > 0 ? rankings : room.players)
-                                    .sort((a: any, b: any) => b.score - a.score)
-                                    .map((p: any, i: number) => {
+                                    .sort((a, b) => b.score - a.score)
+                                    .map((p, i) => {
                                         // Check if avatar is a URL (simple check)
                                         const isAvatarUrl =
                                             p.avatar &&
@@ -331,7 +363,7 @@ const MultiplayerRoom: React.FC = () => {
                         </div>
 
                         <div className="space-y-4">
-                            {room.players.map((player: Player) => (
+                            {room.players.map(player => (
                                 <div
                                     key={player.id}
                                     className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
@@ -400,7 +432,7 @@ const MultiplayerRoom: React.FC = () => {
                                         type="number"
                                         min={10}
                                         max={600}
-                                        value={roomSettings.timeLimit}
+                                        value={room.settings?.timeLimit || 60}
                                         onChange={e => {
                                             const value = Math.max(
                                                 10,
@@ -409,34 +441,23 @@ const MultiplayerRoom: React.FC = () => {
                                                     Number(e.target.value)
                                                 )
                                             )
-                                            setRoom((prev: Room | null) =>
+                                            setRoom(prev =>
                                                 prev
                                                     ? {
                                                           ...prev,
                                                           settings: {
-                                                              ...(prev.settings || defaultSettings),
+                                                              ...prev.settings,
                                                               timeLimit: value,
                                                           },
                                                       }
                                                     : prev
                                             )
-                                            // Update backend
-                                            if (roomId) {
-                                                updateRoomSettings(roomId, {
-                                                    timeLimit: value,
-                                                    maxRetries: roomSettings.maxRetries || 2,
-                                                    showRealTimeScore: roomSettings.showRealTimeScore || true,
-                                                    allowHints: roomSettings.allowHints || true
-                                                }).catch(err => {
-                                                    console.error("Failed to update time limit:", err);
-                                                });
-                                            }
                                         }}
                                         className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                 ) : (
                                     <div className="font-semibold text-slate-800">
-                                        {roomSettings.timeLimit}s
+                                        {room.settings?.timeLimit || 60}s
                                     </div>
                                 )}
                                 <div className="text-xs text-slate-500">
@@ -450,7 +471,7 @@ const MultiplayerRoom: React.FC = () => {
                                         type="number"
                                         min={1}
                                         max={10}
-                                        value={roomSettings.maxRetries}
+                                        value={room.settings?.maxRetries || 2}
                                         onChange={e => {
                                             const value = Math.max(
                                                 1,
@@ -459,34 +480,23 @@ const MultiplayerRoom: React.FC = () => {
                                                     Number(e.target.value)
                                                 )
                                             )
-                                            setRoom((prev: Room | null) =>
+                                            setRoom(prev =>
                                                 prev
                                                     ? {
                                                           ...prev,
                                                           settings: {
-                                                              ...(prev.settings || defaultSettings),
+                                                              ...prev.settings,
                                                               maxRetries: value,
                                                           },
                                                       }
                                                     : prev
                                             )
-                                            // Update backend
-                                            if (roomId) {
-                                                updateRoomSettings(roomId, {
-                                                    timeLimit: roomSettings.timeLimit || 60,
-                                                    maxRetries: value,
-                                                    showRealTimeScore: roomSettings.showRealTimeScore || true,
-                                                    allowHints: roomSettings.allowHints || true
-                                                }).catch(err => {
-                                                    console.error("Failed to update max retries:", err);
-                                                });
-                                            }
                                         }}
                                         className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                 ) : (
                                     <div className="font-semibold text-slate-800">
-                                        {roomSettings.maxRetries}
+                                        {room.settings?.maxRetries || 2}
                                     </div>
                                 )}
                                 <div className="text-xs text-slate-500">
@@ -496,7 +506,7 @@ const MultiplayerRoom: React.FC = () => {
                             <div className="text-center p-4 bg-slate-50 rounded-lg">
                                 <Zap className="w-6 h-6 text-slate-600 mx-auto mb-2" />
                                 <div className="font-semibold text-slate-800">
-                                    {roomSettings.showRealTimeScore
+                                    {room.settings?.showRealTimeScore
                                         ? "On"
                                         : "Off"}
                                 </div>
@@ -507,7 +517,7 @@ const MultiplayerRoom: React.FC = () => {
                             <div className="text-center p-4 bg-slate-50 rounded-lg">
                                 <Users className="w-6 h-6 text-slate-600 mx-auto mb-2" />
                                 <div className="font-semibold text-slate-800">
-                                    {roomSettings.lessonSelection === "random"
+                                    {room.settings?.lessonSelection === "random"
                                         ? "Random"
                                         : "Host"}
                                 </div>
@@ -525,7 +535,7 @@ const MultiplayerRoom: React.FC = () => {
                                 Lesson Selection
                             </h3>
                             {isHost &&
-                                roomSettings.lessonSelection === "random" && (
+                                room.settings?.lessonSelection === "random" && (
                                     <button
                                         onClick={() => setSelectedLesson(null)}
                                         className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
@@ -582,7 +592,7 @@ const MultiplayerRoom: React.FC = () => {
                                         <p className="mb-4">
                                             Select a lesson to start the game
                                         </p>
-                                        {roomSettings.lessonSelection ===
+                                        {room.settings?.lessonSelection ===
                                             "host_choice" && (
                                             <>
                                                 <button
@@ -612,14 +622,14 @@ const MultiplayerRoom: React.FC = () => {
                                                                         lesson
                                                                     )
                                                                 }}
-                                                                className="p-4 text-left border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                                                                className="p-3 text-left border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
                                                             >
-                                                                <div className="font-semibold text-slate-800 mb-1">
+                                                                <div className="font-medium text-slate-800">
                                                                     {
                                                                         lesson.title
                                                                     }
                                                                 </div>
-                                                                <div className="text-xs text-slate-500 mb-2">
+                                                                <div className="text-xs text-slate-500 mt-1">
                                                                     {
                                                                         lesson.level
                                                                     }{" "}
@@ -627,21 +637,6 @@ const MultiplayerRoom: React.FC = () => {
                                                                     {
                                                                         lesson.accent
                                                                     }
-                                                                </div>
-                                                                <div className="space-y-1 text-xs text-slate-600">
-                                                                    <div className="flex justify-between">
-                                                                        <span>Duration:</span>
-                                                                        <span className="font-medium">{lesson.duration}s</span>
-                                                                    </div>
-                                                                    <div className="flex justify-between">
-                                                                        <span>Estimated time:</span>
-                                                                        <span className="font-medium">~{Math.ceil(lesson.duration / (roomSettings.timeLimit || 60))} min</span>
-                                                                    </div>
-                                                                    {lesson.description && (
-                                                                        <div className="text-slate-500 mt-2 line-clamp-2">
-                                                                            {lesson.description}
-                                                                        </div>
-                                                                    )}
                                                                 </div>
                                                             </button>
                                                         )
@@ -659,135 +654,6 @@ const MultiplayerRoom: React.FC = () => {
                         )}
                     </div>
 
-                    {/* Lesson Time Settings - Only show when lesson is selected */}
-                    {selectedLesson && isHost && (
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-semibold text-slate-800">
-                                    Lesson Time Settings
-                                </h3>
-                                <Clock className="w-5 h-5 text-slate-600" />
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                                            Time per Sentence (seconds)
-                                        </label>
-                                        <div className="flex items-center space-x-3">
-                                            <input
-                                                type="number"
-                                                min={10}
-                                                max={300}
-                                                value={roomSettings.timeLimit}
-                                                onChange={e => {
-                                                    const value = Math.max(
-                                                        10,
-                                                        Math.min(
-                                                            300,
-                                                            Number(e.target.value)
-                                                        )
-                                                    )
-                                                    setRoom((prev: Room | null) =>
-                                                        prev
-                                                            ? {
-                                                                  ...prev,
-                                                                  settings: {
-                                                                      ...(prev.settings || defaultSettings),
-                                                                      timeLimit: value,
-                                                                  },
-                                                              }
-                                                            : prev
-                                                    )
-                                                    // Update backend
-                                                    if (roomId) {
-                                                        updateRoomSettings(roomId, {
-                                                            timeLimit: value,
-                                                            maxRetries: roomSettings.maxRetries || 2,
-                                                            showRealTimeScore: roomSettings.showRealTimeScore || true,
-                                                            allowHints: roomSettings.allowHints || true
-                                                        }).catch(err => {
-                                                            console.error("Failed to update lesson time limit:", err);
-                                                        });
-                                                    }
-                                                }}
-                                                className="w-24 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            />
-                                            <span className="text-sm text-slate-600">seconds</span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 mt-1">
-                                            Time allowed for each sentence in the lesson
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                                            Max Retries per Sentence
-                                        </label>
-                                        <div className="flex items-center space-x-3">
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                max={5}
-                                                value={roomSettings.maxRetries}
-                                                onChange={e => {
-                                                    const value = Math.max(
-                                                        1,
-                                                        Math.min(
-                                                            5,
-                                                            Number(e.target.value)
-                                                        )
-                                                    )
-                                                    setRoom((prev: Room | null) =>
-                                                        prev
-                                                            ? {
-                                                                  ...prev,
-                                                                  settings: {
-                                                                      ...(prev.settings || defaultSettings),
-                                                                      maxRetries: value,
-                                                                  },
-                                                              }
-                                                            : prev
-                                                    )
-                                                    // Update backend
-                                                    if (roomId) {
-                                                        updateRoomSettings(roomId, {
-                                                            timeLimit: roomSettings.timeLimit || 60,
-                                                            maxRetries: value,
-                                                            showRealTimeScore: roomSettings.showRealTimeScore || true,
-                                                            allowHints: roomSettings.allowHints || true
-                                                        }).catch(err => {
-                                                            console.error("Failed to update max retries:", err);
-                                                        });
-                                                    }
-                                                }}
-                                                className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                            />
-                                            <span className="text-sm text-slate-600">retries</span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 mt-1">
-                                            Maximum attempts allowed for each sentence
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                                <div className="flex items-start space-x-3">
-                                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                                    <div>
-                                        <h4 className="font-medium text-blue-800 mb-1">
-                                            Lesson: {selectedLesson.title}
-                                        </h4>
-                                        <p className="text-sm text-blue-600">
-                                            Estimated total time: ~{Math.ceil((selectedLesson.duration || 0) / (roomSettings.timeLimit || 60) * (roomSettings.maxRetries || 2))} minutes
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* Start Game */}
                     {isHost && (
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
@@ -796,12 +662,12 @@ const MultiplayerRoom: React.FC = () => {
                                     Ready to Start?
                                 </h3>
                                 <div className="mb-6">
-                                    {!allPlayersReady && (
+                                    {/* {!allPlayersReady && (
                                         <p className="text-sm text-amber-600 mb-2">
                                             Waiting for all players to be
                                             ready...
                                         </p>
-                                    )}
+                                    )} */}
                                     {!selectedLesson && (
                                         <p className="text-sm text-amber-600 mb-2">
                                             Please select a lesson first
@@ -815,7 +681,7 @@ const MultiplayerRoom: React.FC = () => {
                                 </div>
                                 <button
                                     onClick={() => setPkStarted(true)}
-                                    disabled={!canStartGame}
+                                    // disabled={!canStartGame}
                                     className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold text-lg hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-3 mx-auto"
                                 >
                                     <Play className="w-6 h-6" />
@@ -840,24 +706,12 @@ const PKLessonWithRanking = ({
     onRankingUpdate: (r: any[]) => void
     selectedLesson: any
 }) => {
-    // Default settings when backend doesn't provide settings
-    const defaultSettings = {
-        timeLimit: 60,
-        maxRetries: 2,
-        showRealTimeScore: true,
-        allowHints: true,
-        lessonSelection: "host_choice"
-    };
-
-    // Get settings from room or use defaults
-    const roomSettings = room?.settings || defaultSettings;
-
     return (
         <DictationLessonForPK
             players={room.players}
             onScoreChange={onRankingUpdate}
             lessonId={selectedLesson?.lessonId}
-            timeLimit={roomSettings.timeLimit}
+            timeLimit={room.settings?.timeLimit || 60}
         />
     )
 }
