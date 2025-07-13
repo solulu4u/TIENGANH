@@ -10,9 +10,9 @@ import {
     ArrowRight,
     Zap,
 } from "lucide-react"
-import { useWebSocket } from "../../hooks/useWebSocket"
+import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import { useAuth } from "../../contexts/AuthContext"
-import { getRoomDetails, getLessonById } from "../../utils/api"
+import { getRoomDetailsInMemory, getLessonById } from "../../utils/api"
 import { compareWordsDetailed } from "../../utils/dictationUtils"
 import DictationAudioPlayer from "../lessons/DictationAudioPlayer"
 import type { Room, Player, GameState } from "../../types/multiplayer"
@@ -40,9 +40,23 @@ const MultiplayerGame: React.FC = () => {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string>("")
 
-    const { isConnected, lastMessage, sendMessage } = useWebSocket(
-        "ws://localhost:8080/multiplayer"
+    // SignalR hook for real-time game updates
+    const { connection, submitAnswer } = useGameRoomSignalR(
+        // onPlayerJoined - không cần thiết trong game
+        undefined,
+        // onPlayerLeft - không cần thiết trong game
+        undefined,
+        // onSettingsUpdated - cập nhật settings nếu cần
+        (settings: any) => {
+            console.log("[MultiplayerGame] Settings updated:", settings)
+        },
+        // onJoinFailed - hiển thị lỗi
+        (message: string) => {
+            setError(message)
+            setTimeout(() => setError(""), 5000)
+        }
     )
+
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const timerRef = useRef<ReturnType<typeof setInterval>>()
 
@@ -51,7 +65,7 @@ const MultiplayerGame: React.FC = () => {
         if (roomId) {
             setLoading(true)
             // Load room data
-            getRoomDetails(roomId)
+            getRoomDetailsInMemory(roomId)
                 .then(res => {
                     if (res.success && res.data) {
                         // Convert backend DTO to frontend Room type
@@ -123,12 +137,50 @@ const MultiplayerGame: React.FC = () => {
         }
     }, [roomId])
 
+    // Lắng nghe sự kiện game real-time từ SignalR
     useEffect(() => {
-        if (lastMessage) {
-            console.log("[MultiplayerGame] lastMessage:", lastMessage)
-            handleWebSocketMessage(lastMessage)
+        if (connection) {
+            // Lắng nghe khi game state được cập nhật
+            connection.on("GameUpdated", (gameData: any) => {
+                console.log("[MultiplayerGame] GameUpdated event:", gameData)
+                setGameState(gameData)
+            })
+
+            // Lắng nghe khi player trả lời
+            connection.on("PlayerAnswered", (data: any) => {
+                console.log("[MultiplayerGame] PlayerAnswered event:", data)
+                setRealTimeScores(prev => ({
+                    ...prev,
+                    [data.playerId]: data.score,
+                }))
+            })
+
+            // Lắng nghe khi chuyển sang câu tiếp theo
+            connection.on("NextSentence", () => {
+                console.log("[MultiplayerGame] NextSentence event")
+                setGameState((prev: GameState) => ({
+                    ...prev,
+                    currentSentence: prev.currentSentence + 1,
+                }))
+                setUserAnswer("")
+                setHasSubmitted(false)
+                resetTimer()
+            })
+
+            // Lắng nghe khi game kết thúc
+            connection.on("GameFinished", () => {
+                console.log("[MultiplayerGame] GameFinished event")
+                setShowResults(true)
+            })
+
+            return () => {
+                connection.off("GameUpdated")
+                connection.off("PlayerAnswered")
+                connection.off("NextSentence")
+                connection.off("GameFinished")
+            }
         }
-    }, [lastMessage])
+    }, [connection])
 
     const startTimer = () => {
         timerRef.current = setInterval(() => {
@@ -137,7 +189,7 @@ const MultiplayerGame: React.FC = () => {
                     // Time's up, auto-submit
                     if (!hasSubmitted) {
                         console.log("[MultiplayerGame] Timer auto-submit")
-                        submitAnswer()
+                        submitAnswerHandler()
                     }
                     return prev
                 }
@@ -187,8 +239,8 @@ const MultiplayerGame: React.FC = () => {
         startTimer()
     }
 
-    const submitAnswer = () => {
-        if (hasSubmitted || !currentLesson) return
+    const submitAnswerHandler = () => {
+        if (hasSubmitted || !currentLesson || !roomId || !user?.id) return
         console.log("[MultiplayerGame] submitAnswer", userAnswer)
         const currentChallenge =
             currentLesson.challenges[gameState.currentSentence]
@@ -206,18 +258,15 @@ const MultiplayerGame: React.FC = () => {
 
         setHasSubmitted(true)
 
-        sendMessage({
-            type: "submit_answer",
-            data: {
-                roomId,
-                playerId: user?.id,
-                sentenceIndex: gameState.currentSentence,
-                answer: userAnswer,
-                score,
-                isCorrect,
-                timeSpent:
-                    (room?.settings?.timeLimit || 60) - gameState.timeRemaining,
-            },
+        // Sử dụng SignalR thay vì WebSocket
+        submitAnswer(roomId, {
+            playerId: user.id,
+            sentenceIndex: gameState.currentSentence,
+            answer: userAnswer,
+            score,
+            isCorrect,
+            timeSpent:
+                (room?.settings?.timeLimit || 60) - gameState.timeRemaining,
         })
     }
 
@@ -520,7 +569,7 @@ const MultiplayerGame: React.FC = () => {
                                     </div>
 
                                     <button
-                                        onClick={submitAnswer}
+                                        onClick={submitAnswerHandler}
                                         disabled={
                                             !userAnswer.trim() || hasSubmitted
                                         }

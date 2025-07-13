@@ -12,8 +12,10 @@ import {
     ArrowRight,
     Copy,
     Check,
+    RefreshCw,
 } from "lucide-react"
-import { getActiveRooms, joinGameRoom, createGameRoom, getCategoriesBySkillName } from "../../utils/api"
+import { getActiveRoomsInMemory, joinGameRoomInMemory, createGameRoomInMemory, getCategoriesBySkillName } from "../../utils/api"
+import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room } from "../../types/multiplayer"
 
 const MultiplayerLobby: React.FC = () => {
@@ -30,15 +32,114 @@ const MultiplayerLobby: React.FC = () => {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState("")
 
+    // SignalR hook for real-time updates
+    const { connection } = useGameRoomSignalR(
+        undefined,
+        undefined,
+        (settings: any) => {
+            console.log("[MultiplayerLobby] Settings updated:", settings)
+        },
+        (message: string) => {
+            setError(message)
+            setTimeout(() => setError(""), 5000)
+        },
+        // onRoomCreated
+        (roomData: any) => {
+            console.log("[MultiplayerLobby] RoomCreated event:", roomData)
+            const players = Array.isArray(roomData.players) ? roomData.players : [];
+            const newRoom: Room = {
+                id: roomData.roomId,
+                name: roomData.roomName,
+                hostId: roomData.hostId,
+                hostName: players.find((p: any) => p.isHost)?.userName || "Unknown",
+                players: players.map((p: any) => ({
+                    id: p.userId,
+                    name: p.userName,
+                    avatar: p.avatar,
+                    isHost: p.isHost,
+                    isReady: p.isReady,
+                    score: 0,
+                    currentProgress: 0,
+                    status: "Connected" as const,
+                    joinedAt: new Date()
+                })),
+                maxPlayers: roomData.settings.maxPlayers,
+                status: roomData.gameStatus,
+                currentSentence: 0,
+                settings: {
+                    timeLimit: roomData.settings.timeLimit,
+                    maxRetries: roomData.settings.maxRetries,
+                    showRealTimeScore: roomData.settings.showRealTimeScore,
+                    allowHints: roomData.settings.allowHints,
+                    lessonSelection: roomData.settings.lessonSelection,
+                },
+                createdAt: new Date(),
+                categoryId: "dictation",
+                categoryTitle: "Dictation",
+                roomName: roomData.roomName,
+                hostAvatar: players.find((p: any) => p.isHost)?.avatar || "",
+                currentPlayers: players.length,
+                selectedLessonId: roomData.settings.lessonId?.toString(),
+                selectedLessonTitle: undefined,
+                categoryDescription: "Multiplayer Dictation",
+                categoryDifficult: "Intermediate",
+                createdBy: roomData.hostId
+            }
+            setRooms(prev => [...prev, newRoom])
+        },
+        // onRoomClosed
+        (roomId: string) => {
+            console.log("[MultiplayerLobby] RoomClosed event:", roomId)
+            setRooms(prev => prev.filter(room => room.id !== roomId))
+        },
+        // onRoomUpdated
+        (roomData: any) => {
+            console.log("[MultiplayerLobby] RoomUpdated event:", roomData)
+            const players = Array.isArray(roomData.players) ? roomData.players : [];
+            setRooms(prev => prev.map(room => 
+                room.id === roomData.roomId ? {
+                    ...room,
+                    name: roomData.roomName,
+                    hostId: roomData.hostId,
+                    hostName: players.find((p: any) => p.isHost)?.userName || "Unknown",
+                    players: players.map((p: any) => ({
+                        id: p.userId,
+                        name: p.userName,
+                        avatar: p.avatar,
+                        isHost: p.isHost,
+                        isReady: p.isReady,
+                        score: 0,
+                        currentProgress: 0,
+                        status: "Connected" as const,
+                        joinedAt: new Date()
+                    })),
+                    maxPlayers: roomData.settings.maxPlayers,
+                    status: roomData.gameStatus,
+                    settings: {
+                        timeLimit: roomData.settings.timeLimit,
+                        maxRetries: roomData.settings.maxRetries,
+                        showRealTimeScore: roomData.settings.showRealTimeScore,
+                        allowHints: roomData.settings.allowHints,
+                        lessonSelection: roomData.settings.lessonSelection,
+                    }
+                } : room
+            ))
+        }
+    )
+
     // Load active rooms
     useEffect(() => {
         loadActiveRooms()
     }, [])
 
+    // Real-time updates via SignalR - no need for manual refresh
+
     // Load categories for create room
     useEffect(() => {
         loadCategories()
     }, [])
+
+    // Real-time updates handled by useGameRoomSignalR hook
 
     const loadCategories = async () => {
         try {
@@ -54,7 +155,7 @@ const MultiplayerLobby: React.FC = () => {
     const loadActiveRooms = async () => {
         setLoading(true)
         try {
-            const response = await getActiveRooms()
+            const response = await getActiveRoomsInMemory()
             if (response.success && response.data) {
                 // Convert backend DTOs to frontend Room type
                 const roomData: Room[] = response.data.map((room: any) => ({
@@ -108,37 +209,16 @@ const MultiplayerLobby: React.FC = () => {
         setLoading(true)
         setError("")
 
-        createGameRoom({
+        createGameRoomInMemory({
             roomName: newRoomName.trim(),
             maxPlayers: 6,
             categoryId: selectedCategory.id,
         })
             .then(response => {
                 if (response.success && response.data) {
-                    const roomData: Room = {
-                        id: response.data,
-                        name: newRoomName,
-                        hostId: "sample-host",
-                        hostName: "Sample Host",
-                        players: [],
-                        maxPlayers: 6,
-                        status: "waiting",
-                        currentSentence: 0,
-                        settings: {
-                            timeLimit: 60,
-                            maxRetries: 2,
-                            showRealTimeScore: true,
-                            allowHints: true,
-                            lessonSelection: "host_choice",
-                        },
-                        createdAt: new Date(),
-                        categoryId: selectedCategory.id,
-                        categoryTitle: selectedCategory.title,
-                    }
-
-                    setRooms(prev => [...prev, roomData])
-                    console.log("[MultiplayerLobby] Room created:", roomData)
-
+                    console.log("[MultiplayerLobby] Room created successfully:", response.data)
+                    
+                    // Real-time update will be handled by SignalR
                     setNewRoomName("")
                     setShowCreateRoom(false)
                     setSelectedCategory(null)
@@ -161,7 +241,11 @@ const MultiplayerLobby: React.FC = () => {
         setLoading(true)
         setError("")
 
-        joinGameRoom(targetRoomId)
+        // Sử dụng userId và userName từ context hoặc fallback
+        const userId = "current-user-id" // Cần lấy từ AuthContext
+        const userName = "Current User" // Cần lấy từ AuthContext
+
+        joinGameRoomInMemory(targetRoomId, userId, userName)
             .then(response => {
                 if (response.success) {
                     navigate(`/dashboard/multiplayer/room/${targetRoomId}`)

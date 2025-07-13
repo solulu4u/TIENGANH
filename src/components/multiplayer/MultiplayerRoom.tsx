@@ -12,9 +12,11 @@ import {
     Clock,
     Trophy,
     Zap,
+    RefreshCw,
 } from "lucide-react"
 import { useAuth } from "../../contexts/AuthContext"
-import { getRoomDetails, getLessonsByCategoryTitle, updateRoomSettings } from "../../utils/api"
+import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings } from "../../utils/api"
+import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room, Player } from "../../types/multiplayer"
 import DictationLessonForPK from "../lessons/DictationLessonForPK"
 
@@ -22,9 +24,9 @@ const MultiplayerRoom: React.FC = () => {
     console.log("[MultiplayerRoom] Render")
     const { roomId } = useParams<{ roomId: string }>()
     const navigate = useNavigate()
-    // const { user } = useAuth();
-    // Giả lập user hiện tại là host 'me'
-    const user = { id: "me", name: "Bạn", avatar: "BN" }
+    const { user, forceClear } = useAuth();
+    // Fallback user if auth context is not available
+    const currentUser = user || { id: "b26f222f-11c4-4453-9a1e-481fc87d0f0e", name: "Bạn", avatar: "BN" }
     const [room, setRoom] = useState<Room | null>(null)
     const [availableLessons, setAvailableLessons] = useState<any[]>([])
     const [selectedLesson, setSelectedLesson] = useState<any>(null)
@@ -34,6 +36,101 @@ const MultiplayerRoom: React.FC = () => {
     const [pkStarted, setPkStarted] = useState(false)
     const [rankings, setRankings] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
+
+    // SignalR hook for real-time multiplayer
+    const { joinRoom, leaveRoom, updateSettings: updateRoomSettingsSignalR, connection } = useGameRoomSignalR(
+        // onPlayerJoined - thêm player mới vào danh sách
+        (userId: string, userName: string) => {
+            console.log("[MultiplayerRoom] Player joined:", userId, userName)
+            setRoom(prev => {
+                if (!prev) return prev
+                const newPlayer: Player = {
+                    id: userId,
+                    name: userName,
+                    avatar: userName[0] || "U",
+                    isHost: false,
+                    isReady: false,
+                    score: 0,
+                    currentProgress: 0,
+                    status: "Connected",
+                    joinedAt: new Date().toISOString()
+                }
+                return {
+                    ...prev,
+                    players: [...prev.players, newPlayer]
+                }
+            })
+        },
+        // onPlayerLeft - xóa player khỏi danh sách
+        (userId: string) => {
+            console.log("[MultiplayerRoom] Player left:", userId)
+            setRoom(prev => {
+                if (!prev) return prev
+                return {
+                    ...prev,
+                    players: prev.players.filter(p => p.id !== userId)
+                }
+            })
+        },
+        // onSettingsUpdated - cập nhật settings của phòng
+        (settings: any) => {
+            console.log("[MultiplayerRoom] Settings updated:", settings)
+            setRoom(prev => {
+                if (!prev) return prev
+                return {
+                    ...prev,
+                    settings: { ...prev.settings, ...settings }
+                }
+            })
+        },
+        // onJoinFailed - hiển thị lỗi khi join thất bại
+        (message: string) => {
+            console.error("[MultiplayerRoom] Join failed:", message)
+            // Có thể hiển thị toast notification hoặc redirect về lobby
+        }
+    )
+
+    // Debug function to clear localStorage and refresh
+    const handleForceClear = () => {
+        forceClear()
+        window.location.reload()
+    }
+
+    // Join room via SignalR khi component mount
+    useEffect(() => {
+        if (roomId && currentUser?.id && room) {
+            const userName = (currentUser as any).name || currentUser.id
+            console.log("[MultiplayerRoom] Joining room via SignalR:", roomId, currentUser.id, userName)
+            // Chỉ join nếu chưa có trong danh sách players
+            const isAlreadyInRoom = room.players.some(player => player.id === currentUser.id)
+            if (!isAlreadyInRoom) {
+                joinRoom(roomId, currentUser.id, userName)
+            } else {
+                console.log("[MultiplayerRoom] User already in room, skipping join")
+            }
+        }
+    }, [roomId, currentUser?.id, room, joinRoom])
+
+    // Leave room via SignalR khi component unmount - chỉ khi thực sự unmount
+    useEffect(() => {
+        const handleBeforeUnload = () => {
+            if (roomId && currentUser?.id) {
+                console.log("[MultiplayerRoom] Leaving room via SignalR (beforeunload):", roomId, currentUser.id)
+                leaveRoom(roomId, currentUser.id)
+            }
+        }
+
+        window.addEventListener('beforeunload', handleBeforeUnload)
+        
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload)
+            // Chỉ leave room khi component thực sự unmount, không phải re-render
+            if (roomId && currentUser?.id) {
+                console.log("[MultiplayerRoom] Component unmounting, leaving room:", roomId, currentUser.id)
+                leaveRoom(roomId, currentUser.id)
+            }
+        }
+    }, [roomId, currentUser?.id, leaveRoom])
 
     // Đặt fetchLessons ở ngoài useEffect, ngay sau khai báo state
     const fetchLessons = () => {
@@ -63,8 +160,13 @@ const MultiplayerRoom: React.FC = () => {
         console.log("[MultiplayerRoom] useEffect roomId", roomId)
         if (roomId) {
             // Load room data
-            getRoomDetails(roomId)
+            getRoomDetailsInMemory(roomId)
                 .then(res => {
+                    if (res.status === 404 || (res.success === false && res.message === "Room not found")) {
+                        alert("Room not found. Please create or join a new room.");
+                        navigate("/dashboard/multiplayer");
+                        return;
+                    }
                     if (res.success && res.data) {
                         // Convert backend DTO to frontend Room type
                         const roomData: Room = {
@@ -127,7 +229,14 @@ const MultiplayerRoom: React.FC = () => {
         console.log("[MultiplayerRoom] rankings updated:", rankings)
     }, [rankings])
 
-    const isHost = user?.id === room?.hostId
+    // Fix host detection logic
+    const isHost = currentUser?.id === room?.hostId;
+    console.log("currentUser.id:", currentUser?.id, "room.hostId:", room?.hostId, "isHost:", isHost);
+
+    // Get host player info from players array
+    const hostPlayer = room?.players.find(p => p.id === room?.hostId);
+    const hostName = hostPlayer?.name || room?.hostName || "Unknown Host";
+    const hostAvatar = hostPlayer?.avatar || room?.hostAvatar || "";
 
     // Fetch categories nếu là host và chưa có
     useEffect(() => {
@@ -168,6 +277,29 @@ const MultiplayerRoom: React.FC = () => {
         }
     }
 
+    const handleUpdateSettings = (newSettings: Partial<Room["settings"]> = {}) => {
+        setRoom(prev =>
+            prev ? { ...prev, settings: { ...prev.settings, ...newSettings } } : prev
+        )
+        if (roomId) {
+            updateRoomSettings(roomId, {
+                timeLimit: newSettings.timeLimit ?? room?.settings?.timeLimit ?? 60,
+                maxRetries: newSettings.maxRetries ?? room?.settings?.maxRetries ?? 2,
+                showRealTimeScore: newSettings.showRealTimeScore ?? room?.settings?.showRealTimeScore ?? true
+            }).then(res => {
+                if (res.success) {
+                    getRoomDetailsInMemory(roomId).then(roomRes => {
+                        if (roomRes.success && roomRes.data) {
+                            setRoom(roomRes.data)
+                        }
+                    })
+                }
+            }).catch(err => {
+                console.error("Failed to update room settings:", err)
+            })
+        }
+    }
+
     if (!room) {
         console.log("[MultiplayerRoom] room is null, render not found")
         return (
@@ -180,6 +312,14 @@ const MultiplayerRoom: React.FC = () => {
                     className="mt-4 text-blue-600 hover:text-blue-700"
                 >
                     Back to Lobby
+                </button>
+                {/* Debug button */}
+                <button
+                    onClick={handleForceClear}
+                    className="mt-4 ml-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2 mx-auto"
+                >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Clear Storage & Refresh</span>
                 </button>
             </div>
         )
@@ -320,7 +460,7 @@ const MultiplayerRoom: React.FC = () => {
                             <div className="flex items-center space-x-2 text-slate-600">
                                 <Crown className="w-4 h-4 text-yellow-500" />
                                 <span className="text-sm">
-                                    Host: {room.hostName}
+                                    Host: {hostName}
                                 </span>
                             </div>
                             <div className="flex items-center space-x-2">
@@ -342,12 +482,22 @@ const MultiplayerRoom: React.FC = () => {
                         </div>
                     </div>
                 </div>
-                <div
-                    className={`w-3 h-3 rounded-full ${
-                        // isConnected ? "bg-green-500" : "bg-red-500"
-                        "bg-red-500"
-                    }`}
-                ></div>
+                <div className="flex items-center space-x-2">
+                    <div
+                        className={`w-3 h-3 rounded-full ${
+                            // isConnected ? "bg-green-500" : "bg-red-500"
+                            "bg-red-500"
+                        }`}
+                    ></div>
+                    {/* Debug button */}
+                    <button
+                        onClick={handleForceClear}
+                        className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                        title="Clear localStorage and refresh"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -425,6 +575,7 @@ const MultiplayerRoom: React.FC = () => {
                             )}
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {/* Time Limit */}
                             <div className="text-center p-4 bg-slate-50 rounded-lg">
                                 <Clock className="w-6 h-6 text-slate-600 mx-auto mb-2" />
                                 {isHost ? (
@@ -434,24 +585,8 @@ const MultiplayerRoom: React.FC = () => {
                                         max={600}
                                         value={room.settings?.timeLimit || 60}
                                         onChange={e => {
-                                            const value = Math.max(
-                                                10,
-                                                Math.min(
-                                                    600,
-                                                    Number(e.target.value)
-                                                )
-                                            )
-                                            setRoom(prev =>
-                                                prev
-                                                    ? {
-                                                          ...prev,
-                                                          settings: {
-                                                              ...prev.settings,
-                                                              timeLimit: value,
-                                                          },
-                                                      }
-                                                    : prev
-                                            )
+                                            const value = Math.max(10, Math.min(600, Number(e.target.value)))
+                                            handleUpdateSettings({ timeLimit: value })
                                         }}
                                         className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
@@ -464,6 +599,7 @@ const MultiplayerRoom: React.FC = () => {
                                     Time Limit
                                 </div>
                             </div>
+                            {/* Max Retries */}
                             <div className="text-center p-4 bg-slate-50 rounded-lg">
                                 <Trophy className="w-6 h-6 text-slate-600 mx-auto mb-2" />
                                 {isHost ? (
@@ -473,24 +609,8 @@ const MultiplayerRoom: React.FC = () => {
                                         max={10}
                                         value={room.settings?.maxRetries || 2}
                                         onChange={e => {
-                                            const value = Math.max(
-                                                1,
-                                                Math.min(
-                                                    10,
-                                                    Number(e.target.value)
-                                                )
-                                            )
-                                            setRoom(prev =>
-                                                prev
-                                                    ? {
-                                                          ...prev,
-                                                          settings: {
-                                                              ...prev.settings,
-                                                              maxRetries: value,
-                                                          },
-                                                      }
-                                                    : prev
-                                            )
+                                            const value = Math.max(1, Math.min(10, Number(e.target.value)))
+                                            handleUpdateSettings({ maxRetries: value })
                                         }}
                                         className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
@@ -503,17 +623,28 @@ const MultiplayerRoom: React.FC = () => {
                                     Max Retries
                                 </div>
                             </div>
+                            {/* showRealTimeScore */}
                             <div className="text-center p-4 bg-slate-50 rounded-lg">
                                 <Zap className="w-6 h-6 text-slate-600 mx-auto mb-2" />
-                                <div className="font-semibold text-slate-800">
-                                    {room.settings?.showRealTimeScore
-                                        ? "On"
-                                        : "Off"}
-                                </div>
+                                {isHost ? (
+                                    <label className="flex items-center justify-center space-x-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={room.settings?.showRealTimeScore ?? true}
+                                            onChange={e => handleUpdateSettings({ showRealTimeScore: e.target.checked })}
+                                        />
+                                        <span>{room.settings?.showRealTimeScore ? "On" : "Off"}</span>
+                                    </label>
+                                ) : (
+                                    <div className="font-semibold text-slate-800">
+                                        {room.settings?.showRealTimeScore ? "On" : "Off"}
+                                    </div>
+                                )}
                                 <div className="text-xs text-slate-500">
                                     Live Score
                                 </div>
                             </div>
+                            {/* Selection */}
                             <div className="text-center p-4 bg-slate-50 rounded-lg">
                                 <Users className="w-6 h-6 text-slate-600 mx-auto mb-2" />
                                 <div className="font-semibold text-slate-800">

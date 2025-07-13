@@ -6,6 +6,7 @@ import React, {
     ReactNode,
 } from "react"
 import { loginUser, ApiResponse } from "../utils/api"
+import { jwtDecode } from "jwt-decode"
 
 interface User {
     id: string
@@ -22,6 +23,7 @@ interface AuthContextType {
     logout: () => void
     isAuthenticated: boolean
     updateProfile: (updates: Partial<User>) => void
+    forceClear: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -32,6 +34,17 @@ export const useAuth = () => {
         throw new Error("useAuth must be used within an AuthProvider")
     }
     return context
+}
+
+// Định nghĩa type cho payload JWT (tùy backend)
+type JwtPayload = {
+    sub: string; // userId
+    email: string;
+    fullName?: string;
+    username?: string;
+    level?: "beginner" | "intermediate" | "advanced";
+    targetScore?: number;
+    // ... các trường khác nếu có
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({
@@ -58,14 +71,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                 // Store the JWT token
                 localStorage.setItem("ielts_token", response.data);
                 
-                // Create a mock user object (you can decode the JWT to get real user data)
+                // Decode JWT để lấy user info
+                const decoded: JwtPayload = jwtDecode<JwtPayload>(response.data);
+
                 const mockUser: User = {
-                    id: "1",
-                    username: email.split('@')[0],
-                    email: email,
-                    fullName: email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1) + " Student",
-                    level: "intermediate",
-                    targetScore: 7.0,
+                    id: decoded.sub, // Lấy userId từ JWT (sub)
+                    username: decoded.username || email.split('@')[0],
+                    email: decoded.email,
+                    fullName: decoded.fullName || decoded.username || email.split('@')[0],
+                    level: decoded.level || "intermediate",
+                    targetScore: decoded.targetScore || 7.0,
                 }
                 
                 setUser(mockUser)
@@ -88,6 +103,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         localStorage.removeItem("ielts_progress")
     }
 
+    const forceClear = () => {
+        localStorage.clear()
+        setUser(null)
+        console.log("LocalStorage cleared and user reset!")
+    }
+
     const updateProfile = (updates: Partial<User>) => {
         if (user) {
             const updatedUser = { ...user, ...updates }
@@ -104,6 +125,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                 logout,
                 isAuthenticated: !!user,
                 updateProfile,
+                forceClear,
             }}
         >
             {children}

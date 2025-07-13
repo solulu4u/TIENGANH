@@ -286,7 +286,6 @@ export const updateRoomSettings = async (roomId: string, settings: {
   timeLimit: number;
   maxRetries: number;
   showRealTimeScore: boolean;
-  allowHints: boolean;
 }): Promise<ApiResponse<boolean>> => {
   return apiCall<boolean>(`/api/GameRooms/${roomId}/settings`, {
     method: 'PUT',
@@ -300,4 +299,61 @@ export const startGameSession = async (roomId: string, lessonId: string): Promis
     method: 'POST',
     body: JSON.stringify({ lessonId }),
   });
+}; 
+
+// In-Memory GameRoom APIs (SignalR + In-Memory)
+export const getActiveRoomsInMemory = async () => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/active`);
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching active rooms (in-memory):', error);
+        return { success: false, message: 'Network error' };
+    }
+};
+
+export const getRoomDetailsInMemory = async (roomId: string) => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/${roomId}`);
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching room details (in-memory):', error);
+        return { success: false, message: 'Network error' };
+    }
+};
+
+export const createGameRoomInMemory = async (roomData: {
+    roomName: string;
+    maxPlayers: number;
+    categoryId: string;
+}) => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(roomData),
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Error creating room (in-memory):', error);
+        return { success: false, message: 'Network error' };
+    }
+};
+
+export const joinGameRoomInMemory = async (roomId: string, userId: string, userName: string) => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/${roomId}/join`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId, userName }),
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Error joining room (in-memory):', error);
+        return { success: false, message: 'Network error' };
+    }
 }; 
