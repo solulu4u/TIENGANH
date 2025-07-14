@@ -54,8 +54,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
     useEffect(() => {
         const savedUser = localStorage.getItem("ielts_user")
-        const token = localStorage.getItem("ielts_token")
-        if (savedUser && token) {
+        const accessToken = localStorage.getItem("accessToken")
+        console.log("[AuthContext] useEffect - accessToken:", accessToken)
+        if (savedUser && accessToken) {
             setUser(JSON.parse(savedUser))
         }
     }, [])
@@ -69,7 +70,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
             if (response.success && response.data) {
                 // Store the JWT token
-                localStorage.setItem("ielts_token", response.data);
+                localStorage.setItem("accessToken", response.data);
+                console.log("[AuthContext] login - accessToken:", localStorage.getItem("accessToken"))
                 
                 // Decode JWT để lấy user info
                 const decoded: JwtPayload = jwtDecode<JwtPayload>(response.data);
@@ -99,7 +101,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const logout = () => {
         setUser(null)
         localStorage.removeItem("ielts_user")
-        localStorage.removeItem("ielts_token")
+        localStorage.removeItem("accessToken")
         localStorage.removeItem("ielts_progress")
     }
 

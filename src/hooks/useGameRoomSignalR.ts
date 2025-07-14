@@ -15,7 +15,9 @@ export function useGameRoomSignalR(
 
   useEffect(() => {
     const connection = new HubConnectionBuilder()
-      .withUrl("http://localhost:5285/hubs/gameRoom")
+      .withUrl("http://localhost:5285/hubs/gameRoom", {
+        accessTokenFactory: () => localStorage.getItem('accessToken') || ""
+      })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Information)
       .build();

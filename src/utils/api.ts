@@ -22,7 +22,7 @@ export const apiCall = async <T = any>(
   };
 
   // Add authorization header if token exists
-  const token = localStorage.getItem('ielts_token');
+  const token = localStorage.getItem('accessToken');
   if (token) {
     defaultOptions.headers = {
       ...defaultOptions.headers,
@@ -327,33 +327,46 @@ export const createGameRoomInMemory = async (roomData: {
     maxPlayers: number;
     categoryId: string;
 }) => {
+    // Lấy token từ localStorage (hoặc bạn có thể lấy từ AuthContext nếu muốn)
+    const token = localStorage.getItem('accessToken');
     try {
         const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             },
             body: JSON.stringify(roomData),
         });
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text || `HTTP error ${response.status}`);
+        }
         return await response.json();
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error creating room (in-memory):', error);
-        return { success: false, message: 'Network error' };
+        return { success: false, message: error.message || 'Network error' };
     }
 };
 
-export const joinGameRoomInMemory = async (roomId: string, userId: string, userName: string) => {
+export const joinGameRoomInMemory = async (roomId: string) => {
+    const token = localStorage.getItem('accessToken');
     try {
         const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/${roomId}/join`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ userId, userName }),
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            }
+            // Nếu API join cần body, thêm body ở đây
         });
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text || `HTTP error ${response.status}`);
+        }
         return await response.json();
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error joining room (in-memory):', error);
-        return { success: false, message: 'Network error' };
+        return { success: false, message: error.message || 'Network error' };
     }
 }; 

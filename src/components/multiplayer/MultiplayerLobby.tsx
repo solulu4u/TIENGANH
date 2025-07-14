@@ -14,7 +14,7 @@ import {
     Check,
     RefreshCw,
 } from "lucide-react"
-import { getActiveRoomsInMemory, joinGameRoomInMemory, createGameRoomInMemory, getCategoriesBySkillName } from "../../utils/api"
+import { getActiveRoomsInMemory, joinGameRoomInMemory, createGameRoomInMemory, getCategoriesBySkillName, getRoomDetailsInMemory } from "../../utils/api"
 import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room } from "../../types/multiplayer"
 
@@ -45,47 +45,22 @@ const MultiplayerLobby: React.FC = () => {
         },
         // onRoomCreated
         (roomData: any) => {
-            console.log("[MultiplayerLobby] RoomCreated event:", roomData)
-            const players = Array.isArray(roomData.players) ? roomData.players : [];
-            const newRoom: Room = {
-                id: roomData.roomId,
-                name: roomData.roomName,
-                hostId: roomData.hostId,
-                hostName: players.find((p: any) => p.isHost)?.userName || "Unknown",
-                players: players.map((p: any) => ({
-                    id: p.userId,
-                    name: p.userName,
-                    avatar: p.avatar,
-                    isHost: p.isHost,
-                    isReady: p.isReady,
-                    score: 0,
-                    currentProgress: 0,
-                    status: "Connected" as const,
-                    joinedAt: new Date()
-                })),
-                maxPlayers: roomData.settings.maxPlayers,
-                status: roomData.gameStatus,
-                currentSentence: 0,
-                settings: {
-                    timeLimit: roomData.settings.timeLimit,
-                    maxRetries: roomData.settings.maxRetries,
-                    showRealTimeScore: roomData.settings.showRealTimeScore,
-                    allowHints: roomData.settings.allowHints,
-                    lessonSelection: roomData.settings.lessonSelection,
-                },
-                createdAt: new Date(),
-                categoryId: "dictation",
-                categoryTitle: "Dictation",
-                roomName: roomData.roomName,
-                hostAvatar: players.find((p: any) => p.isHost)?.avatar || "",
-                currentPlayers: players.length,
-                selectedLessonId: roomData.settings.lessonId?.toString(),
-                selectedLessonTitle: undefined,
-                categoryDescription: "Multiplayer Dictation",
-                categoryDifficult: "Intermediate",
-                createdBy: roomData.hostId
-            }
-            setRooms(prev => [...prev, newRoom])
+            console.log("[MultiplayerLobby] RoomCreated event:", roomData);
+            // Gọi lại API để lấy trạng thái mới nhất của room
+            getRoomDetailsInMemory(roomData.id).then(res => {
+                if (res.success && res.data) {
+                    setRooms(prev => {
+                        // Nếu room đã tồn tại, cập nhật lại, nếu chưa thì thêm mới
+                        const exists = prev.some(r => r.id === res.data.id);
+                        const newRoom = { ...res.data, status: res.data.status?.toLowerCase?.() || "" };
+                        if (exists) {
+                            return prev.map(r => r.id === newRoom.id ? newRoom : r);
+                        } else {
+                            return [...prev, newRoom];
+                        }
+                    });
+                }
+            });
         },
         // onRoomClosed
         (roomId: string) => {
@@ -131,6 +106,14 @@ const MultiplayerLobby: React.FC = () => {
     useEffect(() => {
         loadActiveRooms()
     }, [])
+
+    // Auto-refresh rooms every 5 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            loadActiveRooms();
+        }, 5000);
+        return () => clearInterval(interval);
+    }, []);
 
     // Real-time updates via SignalR - no need for manual refresh
 
@@ -241,11 +224,7 @@ const MultiplayerLobby: React.FC = () => {
         setLoading(true)
         setError("")
 
-        // Sử dụng userId và userName từ context hoặc fallback
-        const userId = "current-user-id" // Cần lấy từ AuthContext
-        const userName = "Current User" // Cần lấy từ AuthContext
-
-        joinGameRoomInMemory(targetRoomId, userId, userName)
+        joinGameRoomInMemory(targetRoomId)
             .then(response => {
                 if (response.success) {
                     navigate(`/dashboard/multiplayer/room/${targetRoomId}`)
@@ -364,7 +343,7 @@ const MultiplayerLobby: React.FC = () => {
             <div className="mb-8">
                 <h2 className="text-2xl font-bold text-slate-800 mb-6">
                     Active Rooms
-                </h2>
+                    </h2>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {rooms.map(room => (
                         <div
@@ -377,31 +356,31 @@ const MultiplayerLobby: React.FC = () => {
                                         <div className="flex items-center space-x-3 mb-2">
                                             <h3 className="text-xl font-semibold text-slate-800">
                                                 {room.name}
-                                            </h3>
-                                            <span
+                                        </h3>
+                                        <span
                                                 className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                                                    room.status
-                                                )}`}
-                                            >
-                                                {room.status}
-                                            </span>
+                                                room.status
+                                            )}`}
+                                        >
+                                            {room.status}
+                                        </span>
                                         </div>
                                         <div className="flex items-center space-x-2 text-sm text-slate-600 mb-3">
                                             <Crown className="w-4 h-4 text-yellow-500" />
                                             <span>Host: {room.hostName}</span>
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={() => copyRoomCode(room.id)}
+                                        <button
+                                            onClick={() => copyRoomCode(room.id)}
                                         className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                                         title="Copy room code"
-                                    >
+                                        >
                                         {copied ? (
                                             <Check className="w-4 h-4 text-green-500" />
                                         ) : (
                                             <Copy className="w-4 h-4" />
                                         )}
-                                    </button>
+                                        </button>
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-4 mb-4">
@@ -447,26 +426,28 @@ const MultiplayerLobby: React.FC = () => {
                                             <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
                                                 <span className="text-white text-xs font-bold">
                                                     {player.avatar}
-                                                </span>
-                                            </div>
+                                        </span>
+                                    </div>
                                         </div>
                                     ))}
                                     {room.players.length > 4 && (
-                                        <div 
-                                            key="more-players"
+                                        <div
+                                            key={`more-players-${room.id}`}
                                             className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center"
                                         >
                                             <span className="text-slate-600 text-xs font-bold">
                                                 +{room.players.length - 4}
-                                            </span>
-                                        </div>
+                                        </span>
+                                    </div>
                                     )}
                                 </div>
 
                                 <button
                                     onClick={() => joinRoom(room.id)}
                                     disabled={
-                                        room.status?.toLowerCase() !== "waiting" || room.players.length >= room.maxPlayers
+                                        (room.status?.toLowerCase() !== "waiting") ||
+                                        !Array.isArray(room.players) ||
+                                        room.players.length >= room.maxPlayers
                                     }
                                     className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-xl font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-2"
                                 >
@@ -480,9 +461,9 @@ const MultiplayerLobby: React.FC = () => {
                                     </span>
                                 </button>
                             </div>
-                        </div>
-                    ))}
-                </div>
+                            </div>
+                        ))}
+                    </div>
             </div>
 
             {/* Create Room Modal */}
