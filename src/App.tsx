@@ -24,6 +24,7 @@ import CategoryLessons from "./pages/CategoryLessons"
 import MultiplayerLobby from "./components/multiplayer/MultiplayerLobby"
 import MultiplayerRoom from "./components/multiplayer/MultiplayerRoom"
 import MultiplayerGame from "./components/multiplayer/MultiplayerGame"
+import Analysis from "./pages/Analysis"
 
 function App() {
     return (
@@ -103,6 +104,7 @@ function App() {
                                     path="lesson/dictation/:lessonId"
                                     element={<DictationLesson />}
                                 />
+                                <Route path="analysis" element={<Analysis />} />
                                 <Route path="profile" element={<Profile />} />
                             </Route>
                         </Routes>
