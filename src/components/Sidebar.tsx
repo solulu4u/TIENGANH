@@ -14,6 +14,7 @@ import {
     Zap,
     ChevronLeft,
     ChevronRight,
+    BarChart3,
 } from "lucide-react"
 
 const navigation = [
@@ -24,6 +25,7 @@ const navigation = [
     // { name: 'Speaking', href: '/dashboard/lessons/speaking', icon: MessageSquare },
     { name: "Dictation", href: "/dashboard/dictation", icon: Mic },
     { name: "Multiplayer", href: "/dashboard/multiplayer", icon: Users },
+    { name: "Analysis", href: "/dashboard/analysis", icon: BarChart3 },
     // { name: 'Vocabulary', href: '/dashboard/lessons/vocabulary', icon: BookMarked },
     // { name: 'Grammar', href: '/dashboard/lessons/grammar', icon: FileText },
     // { name: 'Profile', href: '/dashboard/profile', icon: User },
