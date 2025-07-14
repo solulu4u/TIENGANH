@@ -25,6 +25,7 @@ import MultiplayerLobby from "./components/multiplayer/MultiplayerLobby"
 import MultiplayerRoom from "./components/multiplayer/MultiplayerRoom"
 import MultiplayerGame from "./components/multiplayer/MultiplayerGame"
 import Analysis from "./pages/Analysis"
+import YouTubeDictation from "./pages/YouTubeDictation"
 
 function App() {
     return (
@@ -53,6 +54,10 @@ function App() {
                                 <Route
                                     path="dictation/category/:categoryTitle"
                                     element={<CategoryLessons />}
+                                />
+                                <Route
+                                    path="youtube"
+                                    element={<YouTubeDictation />}
                                 />
                                 <Route
                                     path="multiplayer"

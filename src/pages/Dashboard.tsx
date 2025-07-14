@@ -18,6 +18,7 @@ import {
     Volume2,
     Book,
     GraduationCap,
+    Youtube,
 } from "lucide-react"
 import { getSkills } from "../utils/api"
 import { Skill } from "../types/skill"
@@ -210,6 +211,38 @@ const Dashboard: React.FC = () => {
                 </div>
             </div>
 
+            {/* YouTube Dictation Feature */}
+            <div className="bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl p-8 text-white">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="flex items-center space-x-3 mb-4">
+                            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                                <Youtube className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-bold">YouTube Dictation</h3>
+                                <p className="text-red-100">Learn with any YouTube video</p>
+                            </div>
+                        </div>
+                        <p className="text-red-100 mb-6 max-w-md">
+                            Transform any YouTube video into an interactive dictation lesson. 
+                            Practice with real-world content from your favorite creators.
+                        </p>
+                        <Link
+                            to="/dashboard/youtube"
+                            className="inline-flex items-center space-x-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 text-white py-3 px-6 rounded-xl font-semibold transition-all duration-200"
+                        >
+                            <Youtube className="w-5 h-5" />
+                            <span>Try YouTube Dictation</span>
+                        </Link>
+                    </div>
+                    <div className="hidden md:block">
+                        <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center">
+                            <Youtube className="w-12 h-12 text-white" />
+                        </div>
+                    </div>
+                </div>
+            </div>
             {/* Quick Tips */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
                 <h3 className="text-lg font-semibold text-slate-800 mb-4">

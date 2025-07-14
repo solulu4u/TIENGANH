@@ -15,6 +15,7 @@ import {
     ChevronLeft,
     ChevronRight,
     BarChart3,
+    Youtube,
 } from "lucide-react"
 
 const navigation = [
@@ -24,6 +25,7 @@ const navigation = [
     // { name: 'Listening', href: '/dashboard/lessons/listening', icon: Headphones },
     // { name: 'Speaking', href: '/dashboard/lessons/speaking', icon: MessageSquare },
     { name: "Dictation", href: "/dashboard/dictation", icon: Mic },
+    { name: "YouTube", href: "/dashboard/youtube", icon: Youtube },
     { name: "Multiplayer", href: "/dashboard/multiplayer", icon: Users },
     { name: "Analysis", href: "/dashboard/analysis", icon: BarChart3 },
     // { name: 'Vocabulary', href: '/dashboard/lessons/vocabulary', icon: BookMarked },
