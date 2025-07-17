@@ -15,7 +15,7 @@ import {
     RefreshCw,
 } from "lucide-react"
 import { useAuth } from "../../contexts/AuthContext"
-import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings } from "../../utils/api"
+import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings, selectLessonInRoom, getCategoriesBySkill, getLessonById } from "../../utils/api"
 import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room, Player } from "../../types/multiplayer"
 import DictationLessonForPK from "../lessons/DictationLessonForPK"
@@ -36,6 +36,8 @@ const MultiplayerRoom: React.FC = () => {
     const [pkStarted, setPkStarted] = useState(false)
     const [rankings, setRankings] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
+    const [selectingLessonId, setSelectingLessonId] = useState<string | null>(null);
+    const [selectLessonError, setSelectLessonError] = useState<string | null>(null);
 
     // SignalR hook for real-time multiplayer
     const { joinRoom, leaveRoom, updateSettings: updateRoomSettingsSignalR, connection } = useGameRoomSignalR(
@@ -87,6 +89,17 @@ const MultiplayerRoom: React.FC = () => {
         (message: string) => {
             console.error("[MultiplayerRoom] Join failed:", message)
             // Có thể hiển thị toast notification hoặc redirect về lobby
+        },
+        // onRoomCreated
+        undefined,
+        // onRoomClosed
+        undefined,
+        // onRoomUpdated
+        undefined,
+        // onLessonSelected
+        (lessonId: string, lessonTitle: string, lessonData: any) => {
+            // Khi nhận được sự kiện LessonSelected từ SignalR, cập nhật selectedLesson cho mọi client
+            setSelectedLesson({ lessonId, title: lessonTitle, ...lessonData });
         }
     )
 
@@ -134,24 +147,18 @@ const MultiplayerRoom: React.FC = () => {
 
     // Đặt fetchLessons ở ngoài useEffect, ngay sau khai báo state
     const fetchLessons = () => {
-        if (!room) {
-            console.log("[fetchLessons] room is null")
+        if (!room || !room.categoryTitle) {
+            console.log("[fetchLessons] room or categoryTitle is null")
             return
         }
-        console.log("[fetchLessons] categoryTitle:", room.categoryTitle)
-        const url = `http://localhost:5285/api/lessons/category-title/${encodeURIComponent(
-            room.categoryTitle
-        )}`
-        console.log("[fetchLessons] Fetching lessons from:", url)
-        fetch(url)
-            .then(res => res.json())
-            .then(data => {
+        getLessonsByCategoryTitle(room.categoryTitle)
+            .then((data: any) => {
                 console.log("[fetchLessons] Lesson API response:", data)
                 if (data.success && data.data) {
                     setAvailableLessons(data.data)
                 }
             })
-            .catch(err => {
+            .catch((err: any) => {
                 console.error("[fetchLessons] Fetch error:", err)
             })
     }
@@ -247,16 +254,15 @@ const MultiplayerRoom: React.FC = () => {
             categories.length
         )
         if (isHost && categories.length === 0) {
-            fetch("http://localhost:5285/api/categories/skill/Dictation")
-                .then(res => res.json())
-                .then(data => {
+            getCategoriesBySkill("Dictation")
+                .then((data: any) => {
                     console.log(
                         "[MultiplayerRoom] categories API response:",
                         data
                     )
                     if (data.success && data.data) setCategories(data.data)
                 })
-                .catch(err => {
+                .catch((err: any) => {
                     console.error(
                         "[MultiplayerRoom] categories fetch error:",
                         err
@@ -300,6 +306,24 @@ const MultiplayerRoom: React.FC = () => {
         }
     }
 
+    const handleSelectLesson = async (lessonId: string) => {
+        setSelectingLessonId(lessonId);
+        setSelectLessonError(null);
+        if (roomId) {
+            const res = await selectLessonInRoom(roomId, lessonId);
+            if (res.success) {
+                // Lấy chi tiết lesson sau khi chọn thành công
+                const detailRes = await getLessonById(lessonId);
+                if (detailRes.success && detailRes.data) {
+                    setSelectedLesson(detailRes.data);
+                }
+            } else {
+                setSelectLessonError(res.message || "Failed to select lesson");
+            }
+        }
+        setSelectingLessonId(null);
+    };
+
     if (!room) {
         console.log("[MultiplayerRoom] room is null, render not found")
         return (
@@ -312,14 +336,6 @@ const MultiplayerRoom: React.FC = () => {
                     className="mt-4 text-blue-600 hover:text-blue-700"
                 >
                     Back to Lobby
-                </button>
-                {/* Debug button */}
-                <button
-                    onClick={handleForceClear}
-                    className="mt-4 ml-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center space-x-2 mx-auto"
-                >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Clear Storage & Refresh</span>
                 </button>
             </div>
         )
@@ -436,6 +452,9 @@ const MultiplayerRoom: React.FC = () => {
         "availableLessons:",
         availableLessons
     )
+    // Tính toán điều kiện để start game
+    const allPlayersReady = room.players.length >= 2 && room.players.every(p => p.isReady);
+    const canStartGame = isHost && selectedLesson && allPlayersReady;
     return (
         <div className="p-6 max-w-7xl mx-auto">
             {/* Header */}
@@ -489,14 +508,6 @@ const MultiplayerRoom: React.FC = () => {
                         "bg-red-500"
                     }`}
                 ></div>
-                    {/* Debug button */}
-                    <button
-                        onClick={handleForceClear}
-                        className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                        title="Clear localStorage and refresh"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                    </button>
                 </div>
             </div>
 
@@ -681,37 +692,23 @@ const MultiplayerRoom: React.FC = () => {
                             <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <h4 className="font-semibold text-green-800">
-                                            {selectedLesson.title}
-                                        </h4>
-                                        <p className="text-sm text-green-600">
-                                            {selectedLesson.description}
-                                        </p>
+                                        <h4 className="font-semibold text-green-800">{selectedLesson.title}</h4>
+                                        <p className="text-sm text-green-600">{selectedLesson.description}</p>
                                         <div className="flex items-center space-x-4 mt-2 text-xs text-green-600">
-                                            <span>
-                                                Level: {selectedLesson.level}
-                                            </span>
-                                            <span>
-                                                Duration:{" "}
-                                                {selectedLesson.duration}s
-                                            </span>
-                                            <span>
-                                                Accent: {selectedLesson.accent}
-                                            </span>
+                                            <span>Level: {selectedLesson.level}</span>
+                                            <span>Duration: {selectedLesson.duration}s</span>
+                                            <span>Accent: {selectedLesson.accent}</span>
                                         </div>
                                     </div>
                                     {isHost && (
                                         <button
                                             onClick={() => {
-                                                console.log(
-                                                    "[MultiplayerRoom] Host click Change lesson"
-                                                )
-                                                fetchLessons()
-                                                setSelectedLesson(null)
+                                                fetchLessons();
+                                                setSelectedLesson(null);
                                             }}
-                                            className="text-green-600 hover:text-green-800 text-sm"
+                                            className="text-green-600 hover:text-green-800 text-sm border border-green-300 rounded px-3 py-1 ml-4"
                                         >
-                                            Change
+                                            Edit
                                         </button>
                                     )}
                                 </div>
@@ -723,56 +720,37 @@ const MultiplayerRoom: React.FC = () => {
                                         <p className="mb-4">
                                             Select a lesson to start the game
                                         </p>
-                                        {room.settings?.lessonSelection ===
+                                        {isHost && room.settings?.lessonSelection ===
                                             "host_choice" && (
                                             <>
                                                 <button
                                                     onClick={() => {
-                                                        console.log(
-                                                            "[MultiplayerRoom] Host click Chọn bài"
-                                                        )
-                                                        fetchLessons()
+                                                        fetchLessons();
+                                                        setSelectedLesson(null);
                                                     }}
                                                     className="mb-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                                                 >
                                                     Chọn bài
                                                 </button>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
-                                                    {availableLessons.map(
-                                                        lesson => (
+                                                {availableLessons.length > 0 && selectedLesson === null && (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
+                                                        {availableLessons.map(lesson => (
                                                             <button
-                                                                key={
-                                                                    lesson.lessonId
-                                                                }
-                                                                onClick={() => {
-                                                                    console.log(
-                                                                        "[MultiplayerRoom] Host chọn lesson:",
-                                                                        lesson
-                                                                    )
-                                                                    setSelectedLesson(
-                                                                        lesson
-                                                                    )
-                                                                }}
-                                                                className="p-3 text-left border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                                                                key={lesson.lessonId}
+                                                                disabled={!!selectingLessonId}
+                                                                onClick={() => handleSelectLesson(lesson.lessonId)}
+                                                                className={`p-3 text-left border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors ${
+                                                                    selectingLessonId === lesson.lessonId ? "opacity-50" : ""
+                                                                }`}
                                                             >
-                                                                <div className="font-medium text-slate-800">
-                                                                    {
-                                                                        lesson.title
-                                                                    }
-                                                                </div>
-                                                                <div className="text-xs text-slate-500 mt-1">
-                                                                    {
-                                                                        lesson.level
-                                                                    }{" "}
-                                                                    •{" "}
-                                                                    {
-                                                                        lesson.accent
-                                                                    }
-                                                                </div>
+                                                                <div className="font-medium text-slate-800">{lesson.title}</div>
+                                                                <div className="text-xs text-slate-500 mt-1">{lesson.level} • {lesson.accent}</div>
+                                                                {selectingLessonId === lesson.lessonId && <div className="text-blue-500 text-xs mt-1">Đang chọn...</div>}
                                                             </button>
-                                                        )
-                                                    )}
-                                                </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {selectLessonError && <div className="text-red-500 mt-2">{selectLessonError}</div>}
                                             </>
                                         )}
                                     </div>
@@ -793,12 +771,6 @@ const MultiplayerRoom: React.FC = () => {
                                     Ready to Start?
                                 </h3>
                                 <div className="mb-6">
-                                    {/* {!allPlayersReady && (
-                                        <p className="text-sm text-amber-600 mb-2">
-                                            Waiting for all players to be
-                                            ready...
-                                        </p>
-                                    )} */}
                                     {!selectedLesson && (
                                         <p className="text-sm text-amber-600 mb-2">
                                             Please select a lesson first
@@ -809,10 +781,15 @@ const MultiplayerRoom: React.FC = () => {
                                             Need at least 2 players to start
                                         </p>
                                     )}
+                                    {room.players.length >= 2 && !room.players.every(p => p.isReady) && (
+                                        <p className="text-sm text-amber-600 mb-2">
+                                            All players must be ready to start
+                                        </p>
+                                    )}
                                 </div>
                                 <button
                                     onClick={() => setPkStarted(true)}
-                                    // disabled={!canStartGame}
+                                    disabled={!canStartGame}
                                     className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold text-lg hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-3 mx-auto"
                                 >
                                     <Play className="w-6 h-6" />

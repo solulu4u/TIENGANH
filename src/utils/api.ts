@@ -7,13 +7,17 @@ export interface ApiResponse<T = any> {
   message: string;
 }
 
+import { useAuth } from "../contexts/AuthContext";
+
 export const apiCall = async <T = any>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retry = true // chỉ retry 1 lần nếu refresh thành công
 ): Promise<ApiResponse<T>> => {
   const url = `${API_BASE_URL}${endpoint}`;
-  
-  const defaultOptions: RequestInit = {
+
+  let accessToken = localStorage.getItem('accessToken');
+  let defaultOptions: RequestInit = {
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -21,17 +25,36 @@ export const apiCall = async <T = any>(
     ...options,
   };
 
-  // Add authorization header if token exists
-  const token = localStorage.getItem('accessToken');
-  if (token) {
+  if (accessToken) {
     defaultOptions.headers = {
       ...defaultOptions.headers,
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${accessToken}`,
     };
   }
 
   try {
-    const response = await fetch(url, defaultOptions);
+    let response = await fetch(url, defaultOptions);
+    // Nếu bị 401 và có refreshToken, thử refresh và retry 1 lần
+    if (response.status === 401 && retry) {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (refreshToken) {
+        const refreshRes = await refreshAccessToken(refreshToken);
+        if (refreshRes.success && refreshRes.data) {
+          localStorage.setItem('accessToken', refreshRes.data.accessToken);
+          localStorage.setItem('refreshToken', refreshRes.data.refreshToken);
+          // Retry request với token mới
+          defaultOptions.headers = {
+            ...defaultOptions.headers,
+            'Authorization': `Bearer ${refreshRes.data.accessToken}`,
+          };
+          response = await fetch(url, defaultOptions);
+        } else {
+          // Nếu refresh cũng fail thì logout FE
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+        }
+      }
+    }
     let data: any = null;
     const text = await response.text();
     if (text) {
@@ -41,18 +64,6 @@ export const apiCall = async <T = any>(
         // Không phải JSON, giữ nguyên data = null
       }
     }
-    
-    console.log('API Response:', {
-      status: response.status,
-      statusText: response.statusText,
-      data: data
-    });
-    
-    // Log validation errors if any
-    if (data?.errors) {
-      console.log('Validation Errors:', data.errors);
-    }
-    
     return {
       success: response.ok,
       status: response.status,
@@ -70,8 +81,8 @@ export const apiCall = async <T = any>(
   }
 };
 
-export const loginUser = async (email: string, password: string): Promise<ApiResponse<string>> => {
-  return apiCall<string>('/api/identity/login', {
+export const loginUser = async (email: string, password: string): Promise<ApiResponse<{ accessToken: string; refreshToken: string }>> => {
+  return apiCall<{ accessToken: string; refreshToken: string }>('/api/identity/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
@@ -155,12 +166,12 @@ export const getCategoryByTitle = async (title: string): Promise<ApiResponse<any
   return apiCall<any>(`/api/categories/CategoryTitle/${encodeURIComponent(title)}`);
 };
 
-export const getCategoriesBySkillName = async (skillName: string): Promise<ApiResponse<any[]>> => {
-  return apiCall<any[]>(`/api/categories/skill/${encodeURIComponent(skillName)}`);
+export const getCategoriesBySkill = async (skill: string): Promise<ApiResponse<any[]>> => {
+    return apiCall<any[]>(`/api/categories/skill/${encodeURIComponent(skill)}`);
 };
 
-export const getLessonsByCategoryTitle = async (title: string): Promise<ApiResponse<any[]>> => {
-  return apiCall<any[]>(`/api/lessons/category-title/${encodeURIComponent(title)}`);
+export const getLessonsByCategoryTitle = async (categoryTitle: string): Promise<ApiResponse<any[]>> => {
+    return apiCall<any[]>(`/api/lessons/category-title/${encodeURIComponent(categoryTitle)}`);
 };
 
 // ========== MULTIPLAYER API FUNCTIONS ==========
@@ -350,23 +361,24 @@ export const createGameRoomInMemory = async (roomData: {
 };
 
 export const joinGameRoomInMemory = async (roomId: string) => {
-    const token = localStorage.getItem('accessToken');
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/GameRoomInMemory/${roomId}/join`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-            }
-            // Nếu API join cần body, thêm body ở đây
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(text || `HTTP error ${response.status}`);
+    return apiCall(`/api/GameRoomInMemory/${roomId}/join`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
         }
-        return await response.json();
-    } catch (error: any) {
-        console.error('Error joining room (in-memory):', error);
-        return { success: false, message: error.message || 'Network error' };
-    }
+    });
+}; 
+
+export const selectLessonInRoom = async (roomId: string, lessonId: string) => {
+    return apiCall(`/api/GameRoomInMemory/${roomId}/select-lesson`, {
+        method: 'POST',
+        body: JSON.stringify({ lessonId }),
+    });
+}; 
+
+export const refreshAccessToken = async (refreshToken: string): Promise<ApiResponse<{ accessToken: string; refreshToken: string }>> => {
+  return apiCall<{ accessToken: string; refreshToken: string }>('/api/identity/refresh-token', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  });
 }; 

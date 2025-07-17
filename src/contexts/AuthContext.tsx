@@ -5,7 +5,7 @@ import React, {
     useEffect,
     ReactNode,
 } from "react"
-import { loginUser, ApiResponse } from "../utils/api"
+import { loginUser, ApiResponse, refreshAccessToken } from "../utils/api"
 import { jwtDecode } from "jwt-decode"
 
 interface User {
@@ -24,6 +24,7 @@ interface AuthContextType {
     isAuthenticated: boolean
     updateProfile: (updates: Partial<User>) => void
     forceClear: () => void
+    getValidAccessToken: () => Promise<string | null>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -66,15 +67,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         password: string
     ): Promise<boolean> => {
         try {
-            const response: ApiResponse<string> = await loginUser(email, password);
+            // Sửa kiểu trả về cho đúng với BE mới
+            const response: ApiResponse<{ accessToken: string; refreshToken: string }> = await loginUser(email, password);
 
             if (response.success && response.data) {
-                // Store the JWT token
-                localStorage.setItem("accessToken", response.data);
-                console.log("[AuthContext] login - accessToken:", localStorage.getItem("accessToken"))
+                // Store the JWT tokens
+                localStorage.setItem("accessToken", response.data.accessToken);
+                localStorage.setItem("refreshToken", response.data.refreshToken);
+                console.log("[AuthContext] login - accessToken:", response.data.accessToken);
+                console.log("[AuthContext] login - refreshToken:", response.data.refreshToken);
                 
                 // Decode JWT để lấy user info
-                const decoded: JwtPayload = jwtDecode<JwtPayload>(response.data);
+                const decoded: JwtPayload = jwtDecode<JwtPayload>(response.data.accessToken);
 
                 const mockUser: User = {
                     id: decoded.sub, // Lấy userId từ JWT (sub)
@@ -119,6 +123,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         }
     }
 
+    // Hàm kiểm tra accessToken hết hạn
+    function isTokenExpired(token: string): boolean {
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.exp * 1000 < Date.now();
+        } catch {
+            return true;
+        }
+    }
+
+    // Hàm lấy accessToken hợp lệ, tự động refresh nếu hết hạn
+    const getValidAccessToken = async (): Promise<string | null> => {
+        let accessToken = localStorage.getItem("accessToken");
+        const refreshToken = localStorage.getItem("refreshToken");
+        if (!accessToken || !refreshToken) return null;
+        if (isTokenExpired(accessToken)) {
+            const response = await refreshAccessToken(refreshToken);
+            if (response.success && response.data) {
+                localStorage.setItem("accessToken", response.data.accessToken);
+                localStorage.setItem("refreshToken", response.data.refreshToken);
+                accessToken = response.data.accessToken;
+            } else {
+                logout();
+                return null;
+            }
+        }
+        return accessToken;
+    };
+
     return (
         <AuthContext.Provider
             value={{
@@ -128,6 +161,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
                 isAuthenticated: !!user,
                 updateProfile,
                 forceClear,
+                // Thêm getValidAccessToken vào context nếu muốn dùng ngoài
+                getValidAccessToken,
             }}
         >
             {children}

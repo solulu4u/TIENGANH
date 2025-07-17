@@ -14,7 +14,7 @@ import {
     Check,
     RefreshCw,
 } from "lucide-react"
-import { getActiveRoomsInMemory, joinGameRoomInMemory, createGameRoomInMemory, getCategoriesBySkillName, getRoomDetailsInMemory } from "../../utils/api"
+import { getActiveRoomsInMemory, joinGameRoomInMemory, createGameRoomInMemory, getCategoriesBySkill, getRoomDetailsInMemory } from "../../utils/api"
 import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room } from "../../types/multiplayer"
 
@@ -126,7 +126,7 @@ const MultiplayerLobby: React.FC = () => {
 
     const loadCategories = async () => {
         try {
-            const response = await getCategoriesBySkillName("Dictation")
+            const response = await getCategoriesBySkill("Dictation")
             if (response.success && response.data) {
                 setCategories(response.data)
             }
@@ -227,7 +227,10 @@ const MultiplayerLobby: React.FC = () => {
         joinGameRoomInMemory(targetRoomId)
             .then(response => {
                 if (response.success) {
-                    navigate(`/dashboard/multiplayer/room/${targetRoomId}`)
+                    navigate(`/dashboard/multiplayer/room/${response.roomId || targetRoomId}`)
+                } else if (response.message === "already in this room") {
+                    // Cho phép vào lại phòng nếu đã ở trong phòng này
+                    navigate(`/dashboard/multiplayer/room/${response.roomId || targetRoomId}`)
                 } else if (response.message?.includes('already in room')) {
                     const match = response.message.match(/room ([a-f0-9-]{36})/)
                     if (match) {

@@ -9,7 +9,8 @@ export function useGameRoomSignalR(
   onJoinFailed?: (message: string) => void,
   onRoomCreated?: (roomData: any) => void,
   onRoomClosed?: (roomId: string) => void,
-  onRoomUpdated?: (roomData: any) => void
+  onRoomUpdated?: (roomData: any) => void,
+  onLessonSelected?: (lessonId: string, lessonTitle: string, lessonData?: any) => void
 ) {
   const connectionRef = useRef<HubConnection | null>(null);
 
@@ -46,6 +47,11 @@ export function useGameRoomSignalR(
     connection.on("RoomUpdated", (roomData) => {
       console.log("[SignalR] RoomUpdated event received:", roomData);
       onRoomUpdated && onRoomUpdated(roomData);
+    });
+    // Lắng nghe sự kiện LessonSelected
+    connection.on("LessonSelected", (lessonId, lessonTitle, lessonData) => {
+      console.log("[SignalR] LessonSelected event received:", lessonId, lessonTitle, lessonData);
+      onLessonSelected && onLessonSelected(lessonId, lessonTitle, lessonData);
     });
 
     connection.start()

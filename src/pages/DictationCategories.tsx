@@ -17,7 +17,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { Category } from '../types/category';
-import { getCategoriesBySkillName, getLessonsByCategoryTitle } from '../utils/api';
+import { getCategoriesBySkill } from '../utils/api';
 import { titleToSlug } from '../utils/categorySlugMap';
 
 const DictationCategories: React.FC = () => {
@@ -36,7 +36,7 @@ const DictationCategories: React.FC = () => {
     if (skillName) {
       skillParam = skillName.charAt(0).toUpperCase() + skillName.slice(1).toLowerCase();
     }
-    const response = await getCategoriesBySkillName(skillParam);
+    const response = await getCategoriesBySkill(skillParam);
     console.log('Skill param FE truyền:', skillParam, 'API response:', response);
     if (response.success && response.data) {
       const categoriesWithUI = response.data.map((category: any) => ({
