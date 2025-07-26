@@ -19,7 +19,8 @@ import type { Room, Player, GameState } from "../../types/multiplayer"
 
 const MultiplayerGame: React.FC = () => {
     console.log("[MultiplayerGame] Render")
-    const { roomId } = useParams<{ roomId: string }>()
+    const params = useParams();
+    const roomId = typeof params.roomId === "string" ? params.roomId : "";
     const navigate = useNavigate()
     const { user } = useAuth()
     const [room, setRoom] = useState<Room | null>(null)
@@ -39,6 +40,10 @@ const MultiplayerGame: React.FC = () => {
     }>({})
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string>("")
+
+    const isValidGuid = (id: string) =>
+  typeof id === "string" &&
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
 
     // SignalR hook for real-time game updates
     const { connection, submitAnswer } = useGameRoomSignalR(
@@ -62,6 +67,11 @@ const MultiplayerGame: React.FC = () => {
 
     useEffect(() => {
         console.log("[MultiplayerGame] useEffect roomId", roomId)
+        if (!roomId || !isValidGuid(roomId)) {
+            setError("Room ID không hợp lệ!");
+            setLoading(false);
+            return;
+        }
         if (roomId) {
             setLoading(true)
             // Load room data

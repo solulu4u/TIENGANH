@@ -127,6 +127,7 @@ const MultiplayerLobby: React.FC = () => {
     const loadCategories = async () => {
         try {
             const response = await getCategoriesBySkill("Dictation")
+            console.log("[MultiplayerLobby] Categories response:", response)
             if (response.success && response.data) {
                 setCategories(response.data)
             }
@@ -198,7 +199,7 @@ const MultiplayerLobby: React.FC = () => {
             categoryId: selectedCategory.id,
         })
             .then(response => {
-                if (response.success && response.data) {
+                if (response.success && typeof response.data === "string") {
                     console.log("[MultiplayerLobby] Room created successfully:", response.data)
                     
                     // Real-time update will be handled by SignalR
@@ -216,9 +217,17 @@ const MultiplayerLobby: React.FC = () => {
             .finally(() => setLoading(false))
     }
 
+    const isValidGuid = (id: string) =>
+  typeof id === "string" &&
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
+
     const joinRoom = (roomId?: string) => {
-        const targetRoomId = roomId || joinCode
-        console.log("[MultiplayerLobby] joinRoom", targetRoomId)
+        const targetRoomId = roomId || joinCode;
+        console.log("[MultiplayerLobby] joinRoom", targetRoomId);
+        if (!targetRoomId || !isValidGuid(targetRoomId)) {
+            setError("Room ID không hợp lệ!");
+            return;
+        }
         if (!targetRoomId) return
 
         setLoading(true)
@@ -226,11 +235,13 @@ const MultiplayerLobby: React.FC = () => {
 
         joinGameRoomInMemory(targetRoomId)
             .then(response => {
-                if (response.success) {
-                    navigate(`/dashboard/multiplayer/room/${response.roomId || targetRoomId}`)
+                if (response.success && typeof response.data === "string") {
+                    navigate(`/dashboard/multiplayer/room/${response.data}`)
                 } else if (response.message === "already in this room") {
-                    // Cho phép vào lại phòng nếu đã ở trong phòng này
-                    navigate(`/dashboard/multiplayer/room/${response.roomId || targetRoomId}`)
+                    // Nếu backend trả về roomId, dùng roomId đó để điều hướng
+                    const anyResponse = response as any;
+                    const roomId = (typeof anyResponse["roomId"] === "string" && anyResponse["roomId"]) || (typeof response.data === "string" && response.data) || targetRoomId;
+                    navigate(`/dashboard/multiplayer/room/${roomId}`);
                 } else if (response.message?.includes('already in room')) {
                     const match = response.message.match(/room ([a-f0-9-]{36})/)
                     if (match) {
@@ -244,6 +255,9 @@ const MultiplayerLobby: React.FC = () => {
                         return
                     }
                     setError("Bạn đang ở trong một phòng khác.")
+                } else if (response.message === "Invalid room ID format") {
+                    // Nếu user đã ở trong phòng, vẫn cho vào lại phòng cũ
+                    navigate(`/dashboard/multiplayer/room/${targetRoomId}`)
                 } else {
                     setError(response.message || "Failed to join room")
                 }

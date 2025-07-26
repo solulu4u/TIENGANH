@@ -10,7 +10,8 @@ export function useGameRoomSignalR(
   onRoomCreated?: (roomData: any) => void,
   onRoomClosed?: (roomId: string) => void,
   onRoomUpdated?: (roomData: any) => void,
-  onLessonSelected?: (lessonId: string, lessonTitle: string, lessonData?: any) => void
+  onLessonSelected?: (lessonId: string, lessonTitle: string, lessonData?: any) => void,
+  onUpdateSettingsFailed?: (message: string) => void
 ) {
   const connectionRef = useRef<HubConnection | null>(null);
 
@@ -31,7 +32,14 @@ export function useGameRoomSignalR(
       onPlayerLeft && onPlayerLeft(userId);
     });
     connection.on("SettingsUpdated", (settings) => {
+      console.log("[SignalR] SettingsUpdated event received:", settings);
+      console.log("[SignalR] SettingsUpdated event type:", typeof settings);
+      console.log("[SignalR] SettingsUpdated event keys:", Object.keys(settings));
       onSettingsUpdated && onSettingsUpdated(settings);
+    });
+    connection.on("UpdateSettingsFailed", (message) => {
+      console.error("[SignalR] UpdateSettingsFailed event received:", message);
+      onUpdateSettingsFailed && onUpdateSettingsFailed(message);
     });
     connection.on("JoinFailed", (message) => {
       onJoinFailed && onJoinFailed(message);
@@ -54,9 +62,19 @@ export function useGameRoomSignalR(
       onLessonSelected && onLessonSelected(lessonId, lessonTitle, lessonData);
     });
 
+    connection.on("TestResponse", (message) => {
+      console.log("[SignalR] TestResponse received:", message);
+    });
+
+    connection.on("TestUpdateSettingsResponse", (message) => {
+      console.log("[SignalR] TestUpdateSettingsResponse received:", message);
+    });
+
     connection.start()
       .then(() => {
         console.log("[SignalR] Connected successfully");
+        console.log("[SignalR] Connection state:", connection.state);
+        console.log("[SignalR] Connection ID:", connection.connectionId);
       })
       .catch((error) => {
         console.error("[SignalR] Connection failed:", error);
@@ -70,6 +88,10 @@ export function useGameRoomSignalR(
   const isConnected = () => connectionRef.current?.state === HubConnectionState.Connected;
 
   const joinRoom = useCallback(async (roomId: string, userId: string, userName: string) => {
+    console.log("[SignalR] Attempting to join room:", roomId, userId, userName);
+    console.log("[SignalR] Connection state:", connectionRef.current?.state);
+    console.log("[SignalR] Is connected:", isConnected());
+    
     if (isConnected()) {
       try {
         await connectionRef.current?.invoke("JoinRoom", roomId, userId, userName);
@@ -82,6 +104,7 @@ export function useGameRoomSignalR(
       // Retry after a short delay
       setTimeout(() => {
         if (isConnected()) {
+          console.log("[SignalR] Retrying join room after delay...");
           connectionRef.current?.invoke("JoinRoom", roomId, userId, userName);
         }
       }, 1000);
@@ -101,11 +124,18 @@ export function useGameRoomSignalR(
     }
   }, []);
 
-  const updateSettings = useCallback((roomId: string, settings: GameRoomSettingsDTO) => {
+  const updateSettings = useCallback(async (roomId: string, settings: GameRoomSettingsDTO) => {
     if (isConnected()) {
-      connectionRef.current?.invoke("UpdateSettings", roomId, settings);
+      try {
+        await connectionRef.current?.invoke("UpdateSettings", roomId, settings);
+        console.log("[SignalR] UpdateSettings sent successfully:", settings);
+      } catch (error) {
+        console.error("[SignalR] Failed to update settings:", error);
+        throw error;
+      }
     } else {
       console.warn("SignalR not connected yet! updateSettings skipped.");
+      throw new Error("SignalR not connected");
     }
   }, []);
 
@@ -149,6 +179,32 @@ export function useGameRoomSignalR(
     }
   }, []);
 
+  const testConnection = useCallback(async () => {
+    if (isConnected()) {
+      try {
+        await connectionRef.current?.invoke("TestConnection");
+        console.log("[SignalR] TestConnection sent successfully");
+      } catch (error) {
+        console.error("[SignalR] TestConnection failed:", error);
+      }
+    } else {
+      console.warn("SignalR not connected yet! testConnection skipped.");
+    }
+  }, []);
+
+  const testUpdateSettings = useCallback(async (roomId: string) => {
+    if (isConnected()) {
+      try {
+        await connectionRef.current?.invoke("TestUpdateSettings", roomId, "test-data");
+        console.log("[SignalR] TestUpdateSettings sent successfully");
+      } catch (error) {
+        console.error("[SignalR] TestUpdateSettings failed:", error);
+      }
+    } else {
+      console.warn("SignalR not connected yet! testUpdateSettings skipped.");
+    }
+  }, []);
+
   return {
     joinRoom,
     leaveRoom,
@@ -157,6 +213,8 @@ export function useGameRoomSignalR(
     startGame,
     nextSentence,
     endGame,
+    testConnection,
+    testUpdateSettings,
     connection: connectionRef.current,
   };
 } 

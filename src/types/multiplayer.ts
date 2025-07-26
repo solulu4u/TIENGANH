@@ -158,6 +158,7 @@ export interface GameRoomSettingsDTO {
   showRealTimeScore: boolean;
   allowHints: boolean;
   lessonSelection: string; // "host_choice" or "random"
+  lessonId?: string; // Optional for compatibility with backend
 }
 
 export interface PlayerDTO {

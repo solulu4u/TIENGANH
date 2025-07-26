@@ -15,14 +15,23 @@ import {
     RefreshCw,
 } from "lucide-react"
 import { useAuth } from "../../contexts/AuthContext"
-import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings, selectLessonInRoom, getCategoriesBySkill, getLessonById } from "../../utils/api"
+import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings, selectLessonInRoom, getCategoriesBySkill, getLessonById, toggleReadyStatus } from "../../utils/api"
 import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room, Player } from "../../types/multiplayer"
 import DictationLessonForPK from "../lessons/DictationLessonForPK"
 
 const MultiplayerRoom: React.FC = () => {
     console.log("[MultiplayerRoom] Render")
-    const { roomId } = useParams<{ roomId: string }>()
+    // Lấy roomId từ useParams và đảm bảo là string (fix triệt để)
+    const params = useParams();
+    let roomId = "";
+    if (typeof params.roomId === "string") {
+        roomId = params.roomId;
+    } else if (params.roomId && typeof (params.roomId as any).roomId === "string") {
+        roomId = (params.roomId as any).roomId;
+    }
+    // Nếu roomId vẫn không phải string, ép về ""
+    if (typeof roomId !== "string") roomId = "";
     const navigate = useNavigate()
     const { user, forceClear } = useAuth();
     // Fallback user if auth context is not available
@@ -38,14 +47,31 @@ const MultiplayerRoom: React.FC = () => {
     const [categories, setCategories] = useState<any[]>([])
     const [selectingLessonId, setSelectingLessonId] = useState<string | null>(null);
     const [selectLessonError, setSelectLessonError] = useState<string | null>(null);
+    const [error, setError] = useState<string>("");
+    const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
 
     // SignalR hook for real-time multiplayer
-    const { joinRoom, leaveRoom, updateSettings: updateRoomSettingsSignalR, connection } = useGameRoomSignalR(
+    const { joinRoom, leaveRoom, updateSettings: updateRoomSettingsSignalR, testConnection, testUpdateSettings, connection } = useGameRoomSignalR(
         // onPlayerJoined - thêm player mới vào danh sách
         (userId: string, userName: string) => {
             console.log("[MultiplayerRoom] Player joined:", userId, userName)
             setRoom(prev => {
                 if (!prev) return prev
+                
+                // Kiểm tra xem player đã tồn tại chưa
+                const existingPlayer = prev.players.find(p => p.id === userId)
+                if (existingPlayer) {
+                    console.log("[MultiplayerRoom] Player already exists, updating status:", userId)
+                    return {
+                        ...prev,
+                        players: prev.players.map(p => 
+                            p.id === userId 
+                                ? { ...p, status: "Connected" }
+                                : p
+                        )
+                    }
+                }
+                
                 const newPlayer: Player = {
                     id: userId,
                     name: userName,
@@ -57,6 +83,7 @@ const MultiplayerRoom: React.FC = () => {
                     status: "Connected",
                     joinedAt: new Date().toISOString()
                 }
+                console.log("[MultiplayerRoom] Adding new player:", newPlayer)
                 return {
                     ...prev,
                     players: [...prev.players, newPlayer]
@@ -76,12 +103,18 @@ const MultiplayerRoom: React.FC = () => {
         },
         // onSettingsUpdated - cập nhật settings của phòng
         (settings: any) => {
-            console.log("[MultiplayerRoom] Settings updated:", settings)
+            console.log("[MultiplayerRoom] Settings updated received:", settings)
+            console.log("[MultiplayerRoom] Current room settings before update:", room?.settings)
             setRoom(prev => {
-                if (!prev) return prev
+                if (!prev) {
+                    console.log("[MultiplayerRoom] Room is null, cannot update settings")
+                    return prev
+                }
+                const newSettings = { ...prev.settings, ...settings }
+                console.log("[MultiplayerRoom] New settings after merge:", newSettings)
                 return {
                     ...prev,
-                    settings: { ...prev.settings, ...settings }
+                    settings: newSettings
                 }
             })
         },
@@ -100,6 +133,13 @@ const MultiplayerRoom: React.FC = () => {
         (lessonId: string, lessonTitle: string, lessonData: any) => {
             // Khi nhận được sự kiện LessonSelected từ SignalR, cập nhật selectedLesson cho mọi client
             setSelectedLesson({ lessonId, title: lessonTitle, ...lessonData });
+        },
+        // onUpdateSettingsFailed - xử lý lỗi khi update settings thất bại
+        (message: string) => {
+            console.error("[MultiplayerRoom] Update settings failed:", message);
+            // Revert local state changes if update failed
+            // Có thể hiển thị toast notification
+            alert(`Cập nhật settings thất bại: ${message}`);
         }
     )
 
@@ -111,23 +151,19 @@ const MultiplayerRoom: React.FC = () => {
 
     // Join room via SignalR khi component mount
     useEffect(() => {
-        if (roomId && currentUser?.id && room) {
+        if (roomId && currentUser?.id && room && !hasJoinedRoom) {
             const userName = (currentUser as any).name || currentUser.id
             console.log("[MultiplayerRoom] Joining room via SignalR:", roomId, currentUser.id, userName)
-            // Chỉ join nếu chưa có trong danh sách players
-            const isAlreadyInRoom = room.players.some(player => player.id === currentUser.id)
-            if (!isAlreadyInRoom) {
-                joinRoom(roomId, currentUser.id, userName)
-            } else {
-                console.log("[MultiplayerRoom] User already in room, skipping join")
-            }
+            // Luôn join SignalR group để nhận real-time updates
+            joinRoom(roomId, currentUser.id, userName)
+            setHasJoinedRoom(true)
         }
-    }, [roomId, currentUser?.id, room, joinRoom])
+    }, [roomId, currentUser?.id, room, hasJoinedRoom]) // Bỏ joinRoom khỏi dependencies
 
     // Leave room via SignalR khi component unmount - chỉ khi thực sự unmount
     useEffect(() => {
         const handleBeforeUnload = () => {
-            if (roomId && currentUser?.id) {
+            if (roomId && typeof roomId === "string" && currentUser?.id) {
                 console.log("[MultiplayerRoom] Leaving room via SignalR (beforeunload):", roomId, currentUser.id)
                 leaveRoom(roomId, currentUser.id)
             }
@@ -138,12 +174,12 @@ const MultiplayerRoom: React.FC = () => {
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload)
             // Chỉ leave room khi component thực sự unmount, không phải re-render
-            if (roomId && currentUser?.id) {
+            if (roomId && typeof roomId === "string" && currentUser?.id) {
                 console.log("[MultiplayerRoom] Component unmounting, leaving room:", roomId, currentUser.id)
                 leaveRoom(roomId, currentUser.id)
             }
         }
-    }, [roomId, currentUser?.id, leaveRoom])
+    }, [roomId, currentUser?.id]) // Bỏ leaveRoom khỏi dependencies
 
     // Đặt fetchLessons ở ngoài useEffect, ngay sau khai báo state
     const fetchLessons = () => {
@@ -163,71 +199,80 @@ const MultiplayerRoom: React.FC = () => {
             })
     }
 
+    const isValidGuid = (id: string) =>
+  typeof id === "string" &&
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id);
+
     useEffect(() => {
-        console.log("[MultiplayerRoom] useEffect roomId", roomId)
-        if (roomId) {
-            // Load room data
-            getRoomDetailsInMemory(roomId)
-                .then(res => {
-                    if (res.status === 404 || (res.success === false && res.message === "Room not found")) {
-                        alert("Room not found. Please create or join a new room.");
-                        navigate("/dashboard/multiplayer");
-                        return;
-                    }
-                    if (res.success && res.data) {
-                        // Convert backend DTO to frontend Room type
-                        const roomData: Room = {
-                            id: res.data.id,
-                            name: res.data.roomName,
-                            hostId: res.data.hostId,
-                            hostName: res.data.hostName,
-                            players: res.data.players.map((p: any) => ({
-                                id: p.userId,
-                                name: p.userName,
-                                avatar: p.avatar,
-                                isHost: p.isHost,
-                                isReady: p.isReady,
-                                score: p.score,
-                                currentProgress: p.currentProgress,
-                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
-                                joinedAt: p.joinedAt
-                            })),
-                            maxPlayers: res.data.maxPlayers,
-                            status: res.data.status,
-                            currentSentence: res.data.currentSentence,
-                            settings: res.data.settings,
-                            createdAt: new Date(res.data.createdAt),
-                            categoryId: res.data.categoryId,
-                            categoryTitle: res.data.categoryTitle,
-                            // Backend fields
-                            roomName: res.data.roomName,
-                            hostAvatar: res.data.hostAvatar,
-                            currentPlayers: res.data.currentPlayers,
-                            selectedLessonId: res.data.selectedLessonId,
-                            selectedLessonTitle: res.data.selectedLessonTitle,
-                            categoryDescription: res.data.categoryDescription,
-                            categoryDifficult: res.data.categoryDifficult,
-                            createdBy: res.data.createdBy
-                        }
-                        setRoom(roomData)
-                        // Nếu lessonSelection là object (lesson), mới set. Nếu là string, set null.
-                        if (
-                            typeof res.data.settings?.lessonSelection === "object" &&
-                            res.data.settings.lessonSelection !== null
-                        ) {
-                            setSelectedLesson(res.data.settings.lessonSelection)
-                    } else {
-                            setSelectedLesson(null)
-                        }
-                    }
-                })
-                .catch(err => {
-                    console.error("Failed to load room:", err)
-                })
+        console.log("[MultiplayerRoom] useEffect roomId", roomId, typeof roomId);
+        if (!roomId || typeof roomId !== "string" || !isValidGuid(roomId)) {
+            alert("Room ID không hợp lệ!");
+            navigate("/dashboard/multiplayer");
+            return;
         }
-        // XÓA mọi fetch lessons trong useEffect khi vào phòng hoặc load room.
-        // Thêm hàm fetchLessons:
-        // Đảm bảo fetchLessons chỉ gọi khi room đã tồn tại
+        // Load room data
+        getRoomDetailsInMemory(roomId)
+            .then(res => {
+                if (res.status === 404 || (res.success === false && res.message === "Room not found")) {
+                    setError("Phòng không tồn tại hoặc bạn không còn trong phòng này.");
+                    setRoom(null);
+                    return;
+                }
+                if (res.success && res.data) {
+                    // Convert backend DTO to frontend Room type
+                    const roomData: Room = {
+                        id: res.data.id,
+                        name: res.data.roomName,
+                        hostId: res.data.hostId,
+                        hostName: res.data.hostName,
+                        players: res.data.players.map((p: any) => ({
+                            id: p.userId,
+                            name: p.userName,
+                            avatar: p.avatar,
+                            isHost: p.isHost,
+                            isReady: p.isReady,
+                            score: p.score,
+                            currentProgress: p.currentProgress,
+                            status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                            joinedAt: p.joinedAt
+                        })),
+                        maxPlayers: res.data.maxPlayers,
+                        status: res.data.status,
+                        currentSentence: res.data.currentSentence,
+                        settings: res.data.settings,
+                        createdAt: new Date(res.data.createdAt),
+                        categoryId: res.data.categoryId,
+                        categoryTitle: res.data.categoryTitle,
+                        // Backend fields
+                        roomName: res.data.roomName,
+                        hostAvatar: res.data.hostAvatar,
+                        currentPlayers: res.data.currentPlayers,
+                        selectedLessonId: res.data.selectedLessonId,
+                        selectedLessonTitle: res.data.selectedLessonTitle,
+                        categoryDescription: res.data.categoryDescription,
+                        categoryDifficult: res.data.categoryDifficult,
+                        createdBy: res.data.createdBy
+                    }
+                    setRoom(roomData)
+                    setError("");
+                    // Nếu lessonSelection là object (lesson), mới set. Nếu là string, set null.
+                    if (
+                        typeof res.data.settings?.lessonSelection === "object" &&
+                        res.data.settings.lessonSelection !== null
+                    ) {
+                        setSelectedLesson(res.data.settings.lessonSelection)
+                    } else {
+                        setSelectedLesson(null)
+                    }
+                } else {
+                    setError(res.message || "Phòng không tồn tại hoặc bạn không còn trong phòng này.");
+                    setRoom(null);
+                }
+            })
+            .catch(err => {
+                setError("Lỗi mạng hoặc phòng không tồn tại.");
+                setRoom(null);
+            })
     }, [roomId])
 
     useEffect(() => {
@@ -283,39 +328,54 @@ const MultiplayerRoom: React.FC = () => {
         }
     }
 
-    const handleUpdateSettings = (newSettings: Partial<Room["settings"]> = {}) => {
+    // Room Settings: Host được chỉnh, user chỉ xem
+    const handleUpdateSettings = async (newSettings: Partial<Room["settings"]> = {}) => {
+        if (!isHost) return; // Chỉ host mới được phép chỉnh
+        
+        // Cập nhật local state ngay lập tức để UI responsive
         setRoom(prev =>
             prev ? { ...prev, settings: { ...prev.settings, ...newSettings } } : prev
         )
+        
         if (roomId) {
-            updateRoomSettings(roomId, {
-                timeLimit: newSettings.timeLimit ?? room?.settings?.timeLimit ?? 60,
-                maxRetries: newSettings.maxRetries ?? room?.settings?.maxRetries ?? 2,
-                showRealTimeScore: newSettings.showRealTimeScore ?? room?.settings?.showRealTimeScore ?? true
-            }).then(res => {
-                if (res.success) {
-                    getRoomDetailsInMemory(roomId).then(roomRes => {
-                        if (roomRes.success && roomRes.data) {
-                            setRoom(roomRes.data)
-                        }
-                    })
-                }
-            }).catch(err => {
-                console.error("Failed to update room settings:", err)
-            })
+            try {
+                // Chỉ sử dụng SignalR cho realtime, không gọi API
+                const settingsToSend = {
+                    timeLimit: newSettings.timeLimit ?? room?.settings?.timeLimit ?? 60,
+                    maxRetries: newSettings.maxRetries ?? room?.settings?.maxRetries ?? 2,
+                    showRealTimeScore: newSettings.showRealTimeScore ?? room?.settings?.showRealTimeScore ?? true,
+                    allowHints: newSettings.allowHints ?? room?.settings?.allowHints ?? true,
+                    lessonSelection: newSettings.lessonSelection ?? room?.settings?.lessonSelection ?? "host_choice"
+                };
+                
+                console.log("[MultiplayerRoom] Sending settings via SignalR:", settingsToSend);
+                await updateRoomSettingsSignalR(roomId, settingsToSend);
+            } catch (error) {
+                console.error("[MultiplayerRoom] Failed to update settings:", error);
+                // Revert local state changes on error
+                setRoom(prev =>
+                    prev ? { ...prev, settings: { ...prev.settings } } : prev
+                );
+            }
         }
     }
 
+    // Lesson selection: chỉ host được chọn bài, đồng bộ qua SignalR
     const handleSelectLesson = async (lessonId: string) => {
+        if (!isHost) return; // Chỉ host được chọn bài
         setSelectingLessonId(lessonId);
         setSelectLessonError(null);
         if (roomId) {
             const res = await selectLessonInRoom(roomId, lessonId);
             if (res.success) {
-                // Lấy chi tiết lesson sau khi chọn thành công
-                const detailRes = await getLessonById(lessonId);
-                if (detailRes.success && detailRes.data) {
-                    setSelectedLesson(detailRes.data);
+                // Tìm lesson từ availableLessons và setSelectedLesson
+                const lesson = availableLessons.find(l => l.lessonId === lessonId);
+                if (lesson) {
+                    setSelectedLesson(lesson);
+                    // Broadcast lesson selection to all clients
+                    if (connection) {
+                        connection.invoke('LessonSelected', roomId, lesson.lessonId, lesson.title, lesson);
+                    }
                 }
             } else {
                 setSelectLessonError(res.message || "Failed to select lesson");
@@ -324,12 +384,34 @@ const MultiplayerRoom: React.FC = () => {
         setSelectingLessonId(null);
     };
 
+    // Thêm hàm random lesson vào trong component MultiplayerRoom
+    const handleRandomLesson = async () => {
+        if (!isHost || availableLessons.length === 0) return;
+        const randomIndex = Math.floor(Math.random() * availableLessons.length);
+        const lesson = availableLessons[randomIndex];
+        setSelectedLesson(lesson);
+        setSelectingLessonId(lesson.lessonId);
+        setSelectLessonError(null);
+        if (roomId) {
+            const res = await selectLessonInRoom(roomId, lesson.lessonId);
+            if (!res.success) {
+                setSelectLessonError(res.message || "Failed to select lesson");
+            } else {
+                // Broadcast lesson selection to all clients
+                if (connection) {
+                    connection.invoke('LessonSelected', roomId, lesson.lessonId, lesson.title, lesson);
+                }
+            }
+        }
+        setSelectingLessonId(null);
+    };
+
     if (!room) {
-        console.log("[MultiplayerRoom] room is null, render not found")
+        console.log("[MultiplayerRoom] room is null, render not found");
         return (
             <div className="p-6 text-center">
                 <h2 className="text-xl font-semibold text-slate-800">
-                    Room not found
+                    {error ? error : "Phòng không tồn tại hoặc bạn không còn trong phòng này."}
                 </h2>
                 <button
                     onClick={() => navigate("/dashboard/multiplayer")}
@@ -508,6 +590,18 @@ const MultiplayerRoom: React.FC = () => {
                         "bg-red-500"
                     }`}
                 ></div>
+                <button
+                    onClick={testConnection}
+                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm mr-2"
+                >
+                    Test SignalR
+                </button>
+                <button
+                    onClick={() => testUpdateSettings(roomId)}
+                    className="px-3 py-1 bg-green-500 text-white rounded text-sm"
+                >
+                    Test UpdateSettings
+                </button>
                 </div>
             </div>
 
@@ -524,9 +618,9 @@ const MultiplayerRoom: React.FC = () => {
                         </div>
 
                         <div className="space-y-4">
-                            {room.players.map(player => (
+                            {room.players.map((player, index) => (
                                 <div
-                                    key={player.id}
+                                    key={`${player.id}-${index}`}
                                     className="flex items-center justify-between p-3 bg-slate-50 rounded-lg"
                                 >
                                     <div className="flex items-center space-x-3">
@@ -595,9 +689,9 @@ const MultiplayerRoom: React.FC = () => {
                                         min={10}
                                         max={600}
                                         value={room.settings?.timeLimit || 60}
-                                        onChange={e => {
+                                        onChange={async e => {
                                             const value = Math.max(10, Math.min(600, Number(e.target.value)))
-                                            handleUpdateSettings({ timeLimit: value })
+                                            await handleUpdateSettings({ timeLimit: value })
                                         }}
                                         className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
@@ -619,9 +713,9 @@ const MultiplayerRoom: React.FC = () => {
                                         min={1}
                                         max={10}
                                         value={room.settings?.maxRetries || 2}
-                                        onChange={e => {
+                                        onChange={async e => {
                                             const value = Math.max(1, Math.min(10, Number(e.target.value)))
-                                            handleUpdateSettings({ maxRetries: value })
+                                            await handleUpdateSettings({ maxRetries: value })
                                         }}
                                         className="w-20 text-center font-semibold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
@@ -642,7 +736,7 @@ const MultiplayerRoom: React.FC = () => {
                                         <input
                                             type="checkbox"
                                             checked={room.settings?.showRealTimeScore ?? true}
-                                            onChange={e => handleUpdateSettings({ showRealTimeScore: e.target.checked })}
+                                            onChange={async e => await handleUpdateSettings({ showRealTimeScore: e.target.checked })}
                                         />
                                         <span>{room.settings?.showRealTimeScore ? "On" : "Off"}</span>
                                     </label>
@@ -677,9 +771,9 @@ const MultiplayerRoom: React.FC = () => {
                                 Lesson Selection
                             </h3>
                             {isHost &&
-                                room.settings?.lessonSelection === "random" && (
+                                room.settings?.lessonSelection === "host_choice" && (
                                     <button
-                                        onClick={() => setSelectedLesson(null)}
+                                        onClick={handleRandomLesson}
                                         className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                                     >
                                         <Shuffle className="w-4 h-4" />
@@ -712,6 +806,47 @@ const MultiplayerRoom: React.FC = () => {
                                         </button>
                                     )}
                                 </div>
+                                {/* Nút Sẵn sàng cho user không phải host */}
+                                {!isHost && selectedLesson && (
+                                    <div className="text-center mt-4">
+                                        <button
+                                            onClick={async () => {
+                                                if (!roomId) return;
+                                                const res = await toggleReadyStatus(roomId);
+                                                if (res.success) {
+                                                    // Sau khi ready thành công, cập nhật lại room từ server
+                                                    getRoomDetailsInMemory(roomId).then(roomRes => {
+                                                        if (roomRes.success && roomRes.data) {
+                                                            setRoom(prev => ({
+                                                                ...prev!,
+                                                                players: roomRes.data.players.map((p: any) => ({
+                                                                    id: p.userId,
+                                                                    name: p.userName,
+                                                                    avatar: p.avatar,
+                                                                    isHost: p.isHost,
+                                                                    isReady: p.isReady,
+                                                                    score: p.score,
+                                                                    currentProgress: p.currentProgress,
+                                                                    status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                                                    joinedAt: p.joinedAt
+                                                                }))
+                                                            }));
+                                                        }
+                                                    });
+                                                    setIsReady(true);
+                                                }
+                                            }}
+                                            disabled={isReady || room?.players.find(p => p.id === currentUser.id)?.isReady}
+                                            className={`px-6 py-2 rounded-lg font-bold text-white transition-colors ${
+                                                isReady || room?.players.find(p => p.id === currentUser.id)?.isReady
+                                                    ? "bg-gray-400 cursor-not-allowed"
+                                                    : "bg-green-600 hover:bg-green-700"
+                                            }`}
+                                        >
+                                            {isReady || room?.players.find(p => p.id === currentUser.id)?.isReady ? "Đã sẵn sàng" : "Sẵn sàng"}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="text-center py-8 text-slate-500">
