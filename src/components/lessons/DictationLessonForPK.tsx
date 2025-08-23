@@ -27,6 +27,16 @@ interface DictationLessonForPKProps {
     ) => void
     lessonId?: string // Thêm dòng này
     timeLimit?: number // Thêm dòng này để nhận từ phòng
+    submitAnswer?: (roomId: string, data: {
+        playerId: string;
+        sentenceIndex: number;
+        answer: string;
+        score: number;
+        isCorrect: boolean;
+        timeSpent: number;
+    }) => void
+    roomId?: string
+    currentUser?: { id: string; name: string }
 }
 
 const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
@@ -34,21 +44,21 @@ const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
     onScoreChange,
     lessonId: lessonIdProp, // destructure prop
     timeLimit: timeLimitProp,
+    submitAnswer,
+    roomId,
+    currentUser,
 }) => {
-    // State điểm số real-time
+    // State điểm số real-time - sử dụng players từ props thay vì random
     const [scores, setScores] = useState(players.map(p => ({ ...p })))
+    
+    // Cập nhật scores khi players thay đổi
     useEffect(() => {
-        // Demo: cập nhật điểm random mỗi 2s
-        const interval = setInterval(() => {
-            setScores(prev =>
-                prev.map(p => ({
-                    ...p,
-                    score: p.score + Math.floor(Math.random() * 3),
-                }))
-            )
-        }, 2000)
-        return () => clearInterval(interval)
-    }, [])
+        console.log("[DictationLessonForPK] Players prop updated:", players);
+        const newScores = players.map(p => ({ ...p }));
+        console.log("[DictationLessonForPK] Setting new scores:", newScores);
+        setScores(newScores);
+    }, [players])
+    
     useEffect(() => {
         if (onScoreChange)
             onScoreChange([...scores].sort((a, b) => b.score - a.score))
@@ -235,9 +245,41 @@ const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
         return () => clearInterval(interval)
     }, [isYoutubePlaying, youtubePlayer, useYoutube, currentDictation])
 
+    const hasSubmittedRef = useRef(false)
+
+    // Reset hasSubmitted khi user thay đổi input hoặc khi trả lời sai
+    useEffect(() => {
+        console.log("[DictationLessonForPK] User transcript changed, resetting hasSubmitted");
+        hasSubmittedRef.current = false
+    }, [userTranscript])
+
+    // Reset hasSubmitted khi feedback thay đổi và trả lời sai
+    useEffect(() => {
+        if (feedback && !feedback.allCorrect) {
+            console.log("[DictationLessonForPK] Answer was incorrect, allowing retry");
+            // Delay reset để tránh spam
+            setTimeout(() => {
+                hasSubmittedRef.current = false
+                console.log("[DictationLessonForPK] hasSubmitted reset to false after incorrect answer");
+            }, 100)
+        }
+    }, [feedback])
+
     const handleCheck = () => {
-        if (!userTranscript.trim() || !lesson?.challenges || !currentDictation)
+        console.log("[DictationLessonForPK] handleCheck called, hasSubmitted:", hasSubmittedRef.current);
+        if (!userTranscript.trim() || !lesson?.challenges || !currentDictation) {
+            console.log("[DictationLessonForPK] Early return - missing data");
             return
+        }
+        
+        if (hasSubmittedRef.current) {
+            console.log("[DictationLessonForPK] Already submitted, skipping");
+            return
+        }
+        
+        console.log("[DictationLessonForPK] Setting hasSubmitted to true");
+        hasSubmittedRef.current = true // Prevent duplicate submissions
+        
         const correctText = currentDictation.content
         const comparison = compareWordsDetailed(userTranscript, correctText)
         const isCorrect =
@@ -263,10 +305,29 @@ const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
             userAnswer: userTranscript,
             correctAnswer: correctText,
             aiFeedback: { allCorrect: isCorrect, comparison },
-            score: isCorrect ? 10 : 5,
+            score: isCorrect ? 1 : 0, // Thay đổi: 1 điểm cho mỗi câu hoàn thành đúng
             attemptNumber: 1,
             createdAt: new Date(),
         })
+
+        // Gửi điểm số lên backend qua SignalR nếu có submitAnswer function
+        if (submitAnswer && roomId && currentUser) {
+            console.log("[DictationLessonForPK] Submitting answer:", {
+                playerId: currentUser.id,
+                sentenceIndex: currentSentence,
+                answer: userTranscript,
+                score: isCorrect ? 1 : 0,
+                isCorrect
+            });
+            submitAnswer(roomId, {
+                playerId: currentUser.id,
+                sentenceIndex: currentSentence,
+                answer: userTranscript,
+                score: isCorrect ? 1 : 0,
+                isCorrect,
+                timeSpent: 0, // Có thể tính thời gian thực tế nếu cần
+            })
+        }
     }
 
     const [showSettings, setShowSettings] = useState(false)
@@ -412,10 +473,13 @@ const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
             setPronunciationFeedback("")
             setShowCorrectAnswer(false)
             setHintWordCount(0)
+                         hasSubmittedRef.current = false // Reset submission state for next sentence
             if (!autoPlayRef.current) {
                 autoPlayRef.current = true
             }
         } else {
+            // Game sẽ tự động kết thúc khi hết thời gian
+            console.log("[DictationLessonForPK] Game completed, navigating to dashboard");
             navigate(`/dashboard/dictation`)
         }
     }
@@ -519,7 +583,9 @@ const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
 
     // Leaderboard UI
     if (showLeaderboard) {
+        console.log("[DictationLessonForPK] Rendering leaderboard with scores:", scores);
         const sorted = [...scores].sort((a, b) => b.score - a.score)
+        console.log("[DictationLessonForPK] Sorted scores for leaderboard:", sorted);
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-yellow-50 to-pink-50">
                 <div className="max-w-lg w-full bg-white rounded-3xl shadow-2xl p-8 border border-slate-200">
@@ -974,6 +1040,13 @@ const DictationLessonForPK: React.FC<DictationLessonForPKProps> = ({
                                         <b>Hint:</b> {hintContent}
                                     </div>
                                 )}
+                            
+                            {/* Game sẽ tự động kết thúc khi hết thời gian */}
+                            <div className="mt-4 flex justify-center">
+                                <div className="text-sm text-gray-600 bg-gray-100 px-4 py-2 rounded-lg">
+                                    ⏰ Game sẽ tự động kết thúc khi hết thời gian
+                                </div>
+                            </div>
                         </div>
                     </>
                 )}

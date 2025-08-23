@@ -259,12 +259,7 @@ const MultiplayerGame: React.FC = () => {
             currentChallenge.content
         )
         const isCorrect = comparison.every(word => word.status === "correct")
-        const score = isCorrect
-            ? 10
-            : Math.max(
-                  0,
-                  10 - comparison.filter(w => w.status !== "correct").length
-              )
+        const score = isCorrect ? 1 : 0 // Thay đổi: 1 điểm cho mỗi câu hoàn thành đúng
 
         setHasSubmitted(true)
 

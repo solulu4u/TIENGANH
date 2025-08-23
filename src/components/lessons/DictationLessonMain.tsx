@@ -204,7 +204,7 @@ const DictationLessonMain: React.FC = () => {
             userAnswer: userTranscript,
             correctAnswer: correctText,
             aiFeedback: { allCorrect: isCorrect, comparison },
-            score: isCorrect ? 10 : 5,
+            score: isCorrect ? 1 : 0, // Thay đổi: 1 điểm cho mỗi câu hoàn thành đúng
             attemptNumber: 1,
             createdAt: new Date(),
         })

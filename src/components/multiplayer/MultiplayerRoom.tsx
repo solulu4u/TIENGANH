@@ -13,9 +13,10 @@ import {
     Trophy,
     Zap,
     RefreshCw,
+    UserX,
 } from "lucide-react"
 import { useAuth } from "../../contexts/AuthContext"
-import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings, selectLessonInRoom, getCategoriesBySkill, getLessonById, toggleReadyStatus } from "../../utils/api"
+import { getRoomDetailsInMemory, getLessonsByCategoryTitle, updateRoomSettings, selectLessonInRoom, getCategoriesBySkill, getLessonById, readyPlayerInMemory, kickPlayerInMemory } from "../../utils/api"
 import { useGameRoomSignalR } from "../../hooks/useGameRoomSignalR"
 import type { Room, Player } from "../../types/multiplayer"
 import DictationLessonForPK from "../lessons/DictationLessonForPK"
@@ -49,6 +50,10 @@ const MultiplayerRoom: React.FC = () => {
     const [selectLessonError, setSelectLessonError] = useState<string | null>(null);
     const [error, setError] = useState<string>("");
     const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+    const [kickNotification, setKickNotification] = useState<string | null>(null);
+    const [showKickPopup, setShowKickPopup] = useState(false);
+    const [kickConfirm, setKickConfirm] = useState<{id: string, name: string} | null>(null);
+    const [isLoadingLessons, setIsLoadingLessons] = useState(false);
 
     // SignalR hook for real-time multiplayer
     const { joinRoom, leaveRoom, updateSettings: updateRoomSettingsSignalR, testConnection, testUpdateSettings, connection } = useGameRoomSignalR(
@@ -127,12 +132,76 @@ const MultiplayerRoom: React.FC = () => {
         undefined,
         // onRoomClosed
         undefined,
-        // onRoomUpdated
-        undefined,
+        // onRoomUpdated - cập nhật thông tin phòng khi có thay đổi (bao gồm điểm số)
+        (roomData: any) => {
+            console.log("[MultiplayerRoom] RoomUpdated event received:", roomData);
+            console.log("[MultiplayerRoom] RoomUpdated players data:", roomData?.players);
+            
+            if (roomData && roomData.players) {
+                setRoom(prev => {
+                    if (!prev) return prev;
+                    
+                    const updatedPlayers = roomData.players.map((p: any) => ({
+                        id: p.userId,
+                        name: p.userName,
+                        avatar: p.avatar,
+                        isHost: p.isHost,
+                        isReady: p.isReady,
+                        score: p.score || 0, // Ensure score is updated
+                        currentProgress: p.currentProgress || 0,
+                        status: p.status || "Connected",
+                        joinedAt: p.joinedAt
+                    }));
+                    
+                    console.log("[MultiplayerRoom] Updated players from RoomUpdated:", updatedPlayers);
+                    
+                    return {
+                        ...prev,
+                        players: updatedPlayers
+                    };
+                });
+            }
+        },
         // onLessonSelected
         (lessonId: string, lessonTitle: string, lessonData: any) => {
+            console.log("[MultiplayerRoom] LessonSelected event received:", lessonId, lessonTitle, lessonData);
             // Khi nhận được sự kiện LessonSelected từ SignalR, cập nhật selectedLesson cho mọi client
             setSelectedLesson({ lessonId, title: lessonTitle, ...lessonData });
+            
+            // Also update room data to reflect the selected lesson
+            setRoom(prev => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    selectedLessonId: lessonId,
+                    selectedLessonTitle: lessonTitle
+                };
+            });
+            
+            // Refresh room data to ensure consistency
+            if (roomId) {
+                getRoomDetailsInMemory(roomId).then(roomRes => {
+                    if (roomRes.success && roomRes.data) {
+                        console.log("[MultiplayerRoom] Refreshed room data after lesson selection:", roomRes.data);
+                        setRoom(prev => ({
+                            ...prev!,
+                            selectedLessonId: roomRes.data.selectedLessonId,
+                            selectedLessonTitle: roomRes.data.selectedLessonTitle,
+                            players: roomRes.data.players.map((p: any) => ({
+                                id: p.userId,
+                                name: p.userName,
+                                avatar: p.avatar,
+                                isHost: p.isHost,
+                                isReady: p.isReady,
+                                score: p.score,
+                                currentProgress: p.currentProgress,
+                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                joinedAt: p.joinedAt
+                            }))
+                        }));
+                    }
+                });
+            }
         },
         // onUpdateSettingsFailed - xử lý lỗi khi update settings thất bại
         (message: string) => {
@@ -140,7 +209,87 @@ const MultiplayerRoom: React.FC = () => {
             // Revert local state changes if update failed
             // Có thể hiển thị toast notification
             alert(`Cập nhật settings thất bại: ${message}`);
-        }
+        },
+        // onPlayerReady - xử lý khi player ready
+        (receivedRoomId: string) => {
+            console.log("[MultiplayerRoom] Player ready event received for room:", receivedRoomId);
+            // Refresh room data to get updated player status
+            if (receivedRoomId === roomId) {
+                getRoomDetailsInMemory(roomId).then(roomRes => {
+                    if (roomRes.success && roomRes.data) {
+                        setRoom(prev => ({
+                            ...prev!,
+                            players: roomRes.data.players.map((p: any) => ({
+                                id: p.userId,
+                                name: p.userName,
+                                avatar: p.avatar,
+                                isHost: p.isHost,
+                                isReady: p.isReady,
+                                score: p.score,
+                                currentProgress: p.currentProgress,
+                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                joinedAt: p.joinedAt
+                            }))
+                        }));
+                    }
+                });
+            }
+        },
+        // onPlayerKicked - xử lý khi player bị kick
+        (receivedRoomId: string, kickedUserId: string) => {
+            console.log("[MultiplayerRoom] Player kicked event received for room:", receivedRoomId, "kicked user:", kickedUserId);
+            
+            // Check if the current user is the one who was kicked
+            if (receivedRoomId === roomId && kickedUserId === currentUser?.id) {
+                console.log("[MultiplayerRoom] Current user was kicked from the room");
+                console.log("[MultiplayerRoom] Setting kick notification...");
+                // Show custom popup notification and redirect to lobby
+                setShowKickPopup(true);
+                console.log("[MultiplayerRoom] Kick popup set, will redirect in 1.5 seconds");
+                setTimeout(() => {
+                    console.log("[MultiplayerRoom] Redirecting to lobby...");
+                    setShowKickPopup(false);
+                    navigate("/dashboard/multiplayer");
+                }, 1500); // Delay 1.5 seconds to show popup
+                return;
+            }
+            
+            // If it's another player being kicked, refresh room data to get updated player list
+            if (receivedRoomId === roomId) {
+                getRoomDetailsInMemory(roomId).then(roomRes => {
+                    if (roomRes.success && roomRes.data) {
+                        setRoom(prev => ({
+                            ...prev!,
+                            players: roomRes.data.players.map((p: any) => ({
+                                id: p.userId,
+                                name: p.userName,
+                                avatar: p.avatar,
+                                isHost: p.isHost,
+                                isReady: p.isReady,
+                                score: p.score,
+                                currentProgress: p.currentProgress,
+                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                joinedAt: p.joinedAt
+                            }))
+                        }));
+                    }
+                });
+            }
+        },
+        // onGameStarted - chuyển tất cả user sang trang PK
+        (startedRoomId: string) => {
+            if (startedRoomId === roomId) {
+                setPkStarted(true);
+            }
+        },
+               // onPlayerAnswered - xử lý khi player trả lời câu hỏi
+       (answerData: any) => {
+           console.log("[MultiplayerRoom] PlayerAnswered event received:", answerData);
+           
+           // KHÔNG cập nhật điểm số từ PlayerAnswered nữa
+           // Chỉ cập nhật từ RoomUpdated để tránh duplicate
+           console.log("[MultiplayerRoom] Skipping score update from PlayerAnswered to avoid duplicate");
+       }
     )
 
     // Debug function to clear localStorage and refresh
@@ -183,10 +332,11 @@ const MultiplayerRoom: React.FC = () => {
 
     // Đặt fetchLessons ở ngoài useEffect, ngay sau khai báo state
     const fetchLessons = () => {
-        if (!room || !room.categoryTitle) {
-            console.log("[fetchLessons] room or categoryTitle is null")
+        if (!room || !room.categoryTitle || isLoadingLessons) {
+            console.log("[fetchLessons] room or categoryTitle is null, or already loading")
             return
         }
+        setIsLoadingLessons(true);
         getLessonsByCategoryTitle(room.categoryTitle)
             .then((data: any) => {
                 console.log("[fetchLessons] Lesson API response:", data)
@@ -196,6 +346,9 @@ const MultiplayerRoom: React.FC = () => {
             })
             .catch((err: any) => {
                 console.error("[fetchLessons] Fetch error:", err)
+            })
+            .finally(() => {
+                setIsLoadingLessons(false);
             })
     }
 
@@ -253,16 +406,54 @@ const MultiplayerRoom: React.FC = () => {
                         categoryDifficult: res.data.categoryDifficult,
                         createdBy: res.data.createdBy
                     }
+                    
+                    // Check if current user is still in the room (they might have been kicked)
+                    const isUserInRoom = roomData.players.some(p => p.id === currentUser?.id);
+                    if (!isUserInRoom) {
+                        console.log("[MultiplayerRoom] Current user is not in the room anymore, redirecting to lobby");
+                        setShowKickPopup(true);
+                        setTimeout(() => {
+                            setShowKickPopup(false);
+                            navigate("/dashboard/multiplayer");
+                        }, 1500); // Delay 1.5 seconds to show popup
+                        return;
+                    }
+                    
                     setRoom(roomData)
                     setError("");
-                    // Nếu lessonSelection là object (lesson), mới set. Nếu là string, set null.
+                    
+                    // Check for selected lesson in multiple possible locations
+                    let lessonData = null;
+                    
+                    // Check if lessonSelection is an object (lesson data)
                     if (
                         typeof res.data.settings?.lessonSelection === "object" &&
                         res.data.settings.lessonSelection !== null
                     ) {
-                        setSelectedLesson(res.data.settings.lessonSelection)
+                        lessonData = res.data.settings.lessonSelection;
+                        console.log("[MultiplayerRoom] Found lesson in settings.lessonSelection:", lessonData);
+                    }
+                    // Check if selectedLessonId exists and we have lesson data
+                    else if (res.data.selectedLessonId) {
+                        console.log("[MultiplayerRoom] Found selectedLessonId:", res.data.selectedLessonId);
+                        // Try to find lesson in availableLessons or fetch it
+                        if (availableLessons.length > 0) {
+                            lessonData = availableLessons.find(l => l.lessonId === res.data.selectedLessonId);
+                            console.log("[MultiplayerRoom] Found lesson in availableLessons:", lessonData);
+                        }
+                    }
+                    
+                    if (lessonData) {
+                        setSelectedLesson(lessonData);
+                        console.log("[MultiplayerRoom] Setting selected lesson:", lessonData);
+                    } else if (res.data.selectedLessonId) {
+                        // If we have selectedLessonId, we'll handle it in the useEffect above
+                        console.log("[MultiplayerRoom] Have selectedLessonId:", res.data.selectedLessonId);
+                        setSelectedLesson(null); // Set to null temporarily, will be set by useEffect
                     } else {
-                        setSelectedLesson(null)
+                        // No selected lesson yet, this is normal for new rooms
+                        setSelectedLesson(null);
+                        console.log("[MultiplayerRoom] No lesson selected yet (normal for new rooms)");
                     }
                 } else {
                     setError(res.message || "Phòng không tồn tại hoặc bạn không còn trong phòng này.");
@@ -280,6 +471,66 @@ const MultiplayerRoom: React.FC = () => {
         // onRankingUpdate([...scores].sort((a, b) => b.score - a.score))
         console.log("[MultiplayerRoom] rankings updated:", rankings)
     }, [rankings])
+
+    // Debug kick popup
+    useEffect(() => {
+        if (showKickPopup) {
+            console.log("[MultiplayerRoom] Kick popup state changed:", showKickPopup)
+        }
+    }, [showKickPopup])
+
+    // Handle selected lesson when availableLessons are loaded
+    useEffect(() => {
+        if (room && room.selectedLessonId && availableLessons.length > 0 && !selectedLesson) {
+            console.log("[MultiplayerRoom] Available lessons loaded, checking for selected lesson:", room.selectedLessonId);
+            console.log("[MultiplayerRoom] Available lessons:", availableLessons.map(l => ({ id: l.lessonId, title: l.title })));
+            const foundLesson = availableLessons.find((l: any) => l.lessonId === room.selectedLessonId);
+            if (foundLesson) {
+                setSelectedLesson(foundLesson);
+                console.log("[MultiplayerRoom] Found and set selected lesson from availableLessons:", foundLesson);
+            } else {
+                console.log("[MultiplayerRoom] Selected lesson not found in availableLessons");
+            }
+        }
+    }, [room, availableLessons, selectedLesson])
+
+    // Force sync selectedLesson when availableLessons change
+    useEffect(() => {
+        if (room?.selectedLessonId && availableLessons.length > 0) {
+            console.log("[MultiplayerRoom] Force sync - checking for lesson:", room.selectedLessonId);
+            console.log("[MultiplayerRoom] Available lessons IDs:", availableLessons.map(l => l.lessonId));
+            const foundLesson = availableLessons.find((l: any) => l.lessonId === room.selectedLessonId);
+            if (foundLesson && !selectedLesson) {
+                console.log("[MultiplayerRoom] Force sync - setting selected lesson:", foundLesson);
+                setSelectedLesson(foundLesson);
+            } else if (!foundLesson) {
+                console.log("[MultiplayerRoom] Force sync - lesson not found in availableLessons");
+            } else if (selectedLesson) {
+                console.log("[MultiplayerRoom] Force sync - lesson already selected");
+            }
+        }
+    }, [room?.selectedLessonId, availableLessons])
+
+    // Debug room data changes
+    useEffect(() => {
+        if (room) {
+            console.log("[MultiplayerRoom] Room data changed:");
+            console.log("  - selectedLessonId:", room.selectedLessonId);
+            console.log("  - selectedLessonTitle:", room.selectedLessonTitle);
+            console.log("  - current selectedLesson state:", selectedLesson);
+            console.log("  - availableLessons length:", availableLessons.length);
+            
+            // Manual sync if needed
+            if (room.selectedLessonId && availableLessons.length > 0 && !selectedLesson) {
+                console.log("[MultiplayerRoom] Manual sync attempt...");
+                const foundLesson = availableLessons.find((l: any) => l.lessonId === room.selectedLessonId);
+                if (foundLesson) {
+                    console.log("[MultiplayerRoom] Manual sync - setting lesson:", foundLesson);
+                    setSelectedLesson(foundLesson);
+                }
+            }
+        }
+    }, [room?.selectedLessonId, room?.selectedLessonTitle, selectedLesson, availableLessons.length])
 
     // Fix host detection logic
     const isHost = currentUser?.id === room?.hostId;
@@ -315,6 +566,46 @@ const MultiplayerRoom: React.FC = () => {
                 })
         }
     }, [isHost, categories.length])
+
+    // Fetch lessons for all users when room is loaded
+    useEffect(() => {
+        if (room && room.categoryTitle && availableLessons.length === 0 && !isLoadingLessons) {
+            console.log("[MultiplayerRoom] Room loaded, checking for lessons...");
+            console.log("[MultiplayerRoom] Category title:", room.categoryTitle);
+            console.log("[MultiplayerRoom] Selected lesson ID:", room.selectedLessonId);
+            console.log("[MultiplayerRoom] Selected lesson title:", room.selectedLessonTitle);
+            console.log("[MultiplayerRoom] Lesson selection mode:", room.settings?.lessonSelection);
+            console.log("[MultiplayerRoom] Current selectedLesson state:", selectedLesson);
+            
+            setIsLoadingLessons(true);
+            getLessonsByCategoryTitle(room.categoryTitle)
+                .then((data: any) => {
+                    console.log("[MultiplayerRoom] Fetched lessons for room:", data);
+                    if (data.success && data.data) {
+                        setAvailableLessons(data.data);
+                        
+                        // If there's a selected lesson, find and set it
+                        if (room.selectedLessonId) {
+                            const foundLesson = data.data.find((l: any) => l.lessonId === room.selectedLessonId);
+                            if (foundLesson) {
+                                setSelectedLesson(foundLesson);
+                                console.log("[MultiplayerRoom] Set selected lesson after fetching lessons:", foundLesson);
+                            } else {
+                                console.log("[MultiplayerRoom] Selected lesson not found in fetched lessons");
+                            }
+                        } else {
+                            console.log("[MultiplayerRoom] No selected lesson ID, keeping selectedLesson as null");
+                        }
+                    }
+                })
+                .catch((err: any) => {
+                    console.error("[MultiplayerRoom] Error fetching lessons for room:", err);
+                })
+                .finally(() => {
+                    setIsLoadingLessons(false);
+                });
+        }
+    }, [room, availableLessons.length, isLoadingLessons])
 
     // Trong UI, khi host nhấn 'Change' hoặc 'Chọn bài', gọi fetchLessons và show danh sách bài học để chọn.
 
@@ -372,11 +663,14 @@ const MultiplayerRoom: React.FC = () => {
                 const lesson = availableLessons.find(l => l.lessonId === lessonId);
                 if (lesson) {
                     setSelectedLesson(lesson);
-                    // Broadcast lesson selection to all clients
-                    if (connection) {
-                        connection.invoke('LessonSelected', roomId, lesson.lessonId, lesson.title, lesson);
-                    }
+                    // Cập nhật vào room object để đồng bộ với non-host
+                    setRoom(prev => prev ? {
+                        ...prev,
+                        selectedLessonId: lesson.lessonId,
+                        selectedLessonTitle: lesson.title
+                    } : prev);
                 }
+                // Không cần gọi connection.invoke('LessonSelected', ...) vì backend đã broadcast
             } else {
                 setSelectLessonError(res.message || "Failed to select lesson");
             }
@@ -397,13 +691,66 @@ const MultiplayerRoom: React.FC = () => {
             if (!res.success) {
                 setSelectLessonError(res.message || "Failed to select lesson");
             } else {
-                // Broadcast lesson selection to all clients
-                if (connection) {
-                    connection.invoke('LessonSelected', roomId, lesson.lessonId, lesson.title, lesson);
-                }
+                // Cập nhật vào room object để đồng bộ với non-host
+                setRoom(prev => prev ? {
+                    ...prev,
+                    selectedLessonId: lesson.lessonId,
+                    selectedLessonTitle: lesson.title
+                } : prev);
             }
         }
         setSelectingLessonId(null);
+    };
+
+    // Handle kick player
+    const handleKickPlayer = async (targetUserId: string, targetUserName: string) => {
+        if (!isHost || !roomId) return;
+
+        try {
+            const res = await kickPlayerInMemory(roomId, targetUserId);
+            if (res.success) {
+                // Refresh room data to reflect the change
+                getRoomDetailsInMemory(roomId).then(roomRes => {
+                    if (roomRes.success && roomRes.data) {
+                        setRoom(prev => ({
+                            ...prev!,
+                            players: roomRes.data.players.map((p: any) => ({
+                                id: p.userId,
+                                name: p.userName,
+                                avatar: p.avatar,
+                                isHost: p.isHost,
+                                isReady: p.isReady,
+                                score: p.score,
+                                currentProgress: p.currentProgress,
+                                status: p.status as 'Connected' | 'Disconnected' | 'Playing',
+                                joinedAt: p.joinedAt
+                            }))
+                        }));
+                    }
+                });
+                // Show success message in a more elegant way
+                console.log(`${targetUserName} đã bị kick khỏi phòng.`);
+            } else {
+                console.error(`Không thể kick ${targetUserName}: ${res.message}`);
+            }
+        } catch (error) {
+            console.error('Error kicking player:', error);
+        }
+    };
+
+    // Xử lý khi host bấm Start Game
+    const handleStartGame = async () => {
+        try {
+            if (isHost && connection && roomId) {
+                console.log("[MultiplayerRoom] Invoking StartGame with roomId:", roomId);
+                await connection.invoke("StartGame", roomId);
+                console.log("[MultiplayerRoom] StartGame invoked successfully");
+            }
+            setPkStarted(true); // Host cũng chuyển luôn
+        } catch (error) {
+            console.error("[MultiplayerRoom] Error starting game:", error);
+            alert("Không thể bắt đầu game. Vui lòng thử lại.");
+        }
     };
 
     if (!room) {
@@ -535,10 +882,94 @@ const MultiplayerRoom: React.FC = () => {
         availableLessons
     )
     // Tính toán điều kiện để start game
-    const allPlayersReady = room.players.length >= 2 && room.players.every(p => p.isReady);
-    const canStartGame = isHost && selectedLesson && allPlayersReady;
+    const nonHostPlayers = room.players.filter(p => !p.isHost);
+    const allNonHostReady = nonHostPlayers.length > 0 && nonHostPlayers.every(p => p.isReady);
+    const canStartGame = isHost && selectedLesson && room.players.length >= 2 && allNonHostReady;
+    const currentPlayer = room.players.find(p => p.id === currentUser.id);
+    // UI: Nếu là non-host, đã ready nhưng chưa đủ non-host ready, show waiting message
+    let showWaitingForOthers = false;
+    if (!isHost && selectedLesson && currentPlayer?.isReady && nonHostPlayers.length > 0 && !allNonHostReady) {
+        showWaitingForOthers = true;
+    }
     return (
         <div className="p-6 max-w-7xl mx-auto">
+            {/* Custom Kick Popup */}
+            {showKickPopup && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md mx-4 transform transition-all duration-300 scale-100">
+                        <div className="text-center">
+                            {/* Icon */}
+                            <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                                <UserX className="w-8 h-8 text-red-600" />
+                            </div>
+                            
+                            {/* Title */}
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                Bạn đã bị kick khỏi phòng
+                            </h3>
+                            
+                            {/* Message */}
+                            <p className="text-gray-600 mb-6">
+                                Bạn đã bị host kick khỏi phòng này. Bạn sẽ được chuyển về lobby trong vài giây.
+                            </p>
+                            
+                            {/* Loading Animation */}
+                            <div className="flex justify-center mb-4">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                            </div>
+                            
+                            {/* Redirect Info */}
+                            <p className="text-sm text-gray-500">
+                                Đang chuyển về lobby...
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Kick Confirmation Modal */}
+            {kickConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl shadow-lg p-6 max-w-sm mx-4 transform transition-all duration-300 scale-100">
+                        <div className="text-center">
+                            {/* Icon */}
+                            <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                                <UserX className="w-6 h-6 text-red-600" />
+                            </div>
+                            
+                            {/* Title */}
+                            <h3 className="text-lg font-bold text-gray-900 mb-2">
+                                Xác nhận kick
+                            </h3>
+                            
+                            {/* Message */}
+                            <p className="text-gray-600 mb-6">
+                                Bạn có chắc chắn muốn kick <span className="font-semibold text-red-600">{kickConfirm.name}</span> khỏi phòng?
+                            </p>
+                            
+                            {/* Buttons */}
+                            <div className="flex justify-center space-x-3">
+                                <button
+                                    onClick={() => setKickConfirm(null)}
+                                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                                >
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        await handleKickPlayer(kickConfirm.id, kickConfirm.name);
+                                        setKickConfirm(null);
+                                    }}
+                                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+                                >
+                                    Kick
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center space-x-4">
@@ -584,24 +1015,7 @@ const MultiplayerRoom: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                <div
-                    className={`w-3 h-3 rounded-full ${
-                        // isConnected ? "bg-green-500" : "bg-red-500"
-                        "bg-red-500"
-                    }`}
-                ></div>
-                <button
-                    onClick={testConnection}
-                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm mr-2"
-                >
-                    Test SignalR
-                </button>
-                <button
-                    onClick={() => testUpdateSettings(roomId)}
-                    className="px-3 py-1 bg-green-500 text-white rounded text-sm"
-                >
-                    Test UpdateSettings
-                </button>
+                {/* Đã xóa Test SignalR và Test UpdateSettings */}
                 </div>
             </div>
 
@@ -645,13 +1059,25 @@ const MultiplayerRoom: React.FC = () => {
                                             </span>
                                         </div>
                                     </div>
-                                    <div
-                                        className={`w-3 h-3 rounded-full ${
-                                            player.isReady
-                                                ? "bg-green-500"
-                                                : "bg-gray-300"
-                                        }`}
-                                    ></div>
+                                    <div className="flex items-center space-x-2">
+                                        <div
+                                            className={`w-3 h-3 rounded-full ${
+                                                player.isReady
+                                                    ? "bg-green-500"
+                                                    : "bg-gray-300"
+                                            }`}
+                                        ></div>
+                                        {/* Kick button - only show for host and non-host players */}
+                                        {isHost && !player.isHost && (
+                                            <button
+                                                onClick={() => setKickConfirm({id: player.id, name: player.name})}
+                                                className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                                title={`Kick ${player.name}`}
+                                            >
+                                                <UserX className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -782,8 +1208,8 @@ const MultiplayerRoom: React.FC = () => {
                                 )}
                         </div>
 
-                        {selectedLesson ? (
-                            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+                        {selectedLesson && (
+                            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-4">
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <h4 className="font-semibold text-green-800">{selectedLesson.title}</h4>
@@ -797,7 +1223,6 @@ const MultiplayerRoom: React.FC = () => {
                                     {isHost && (
                                         <button
                                             onClick={() => {
-                                                fetchLessons();
                                                 setSelectedLesson(null);
                                             }}
                                             className="text-green-600 hover:text-green-800 text-sm border border-green-300 rounded px-3 py-1 ml-4"
@@ -812,9 +1237,10 @@ const MultiplayerRoom: React.FC = () => {
                                         <button
                                             onClick={async () => {
                                                 if (!roomId) return;
-                                                const res = await toggleReadyStatus(roomId);
+                                                const newReadyState = !room?.players.find(p => p.id === currentUser.id)?.isReady;
+                                                const res = await readyPlayerInMemory(roomId, newReadyState);
                                                 if (res.success) {
-                                                    // Sau khi ready thành công, cập nhật lại room từ server
+                                                    // Sau khi ready/unready thành công, cập nhật lại room từ server
                                                     getRoomDetailsInMemory(roomId).then(roomRes => {
                                                         if (roomRes.success && roomRes.data) {
                                                             setRoom(prev => ({
@@ -833,41 +1259,41 @@ const MultiplayerRoom: React.FC = () => {
                                                             }));
                                                         }
                                                     });
-                                                    setIsReady(true);
+                                                    // setIsReady(newReadyState); // Remove this line, state is derived from room.players
                                                 }
                                             }}
-                                            disabled={isReady || room?.players.find(p => p.id === currentUser.id)?.isReady}
                                             className={`px-6 py-2 rounded-lg font-bold text-white transition-colors ${
-                                                isReady || room?.players.find(p => p.id === currentUser.id)?.isReady
-                                                    ? "bg-gray-400 cursor-not-allowed"
+                                                room?.players.find(p => p.id === currentUser.id)?.isReady
+                                                    ? "bg-red-500 hover:bg-red-600"
                                                     : "bg-green-600 hover:bg-green-700"
                                             }`}
                                         >
-                                            {isReady || room?.players.find(p => p.id === currentUser.id)?.isReady ? "Đã sẵn sàng" : "Sẵn sàng"}
+                                            {room?.players.find(p => p.id === currentUser.id)?.isReady ? "Cancel" : "Ready"}
                                         </button>
                                     </div>
                                 )}
                             </div>
-                        ) : (
+                        )}
+                        
+                        {/* Lesson Selection Interface - Always show for host when no lesson is selected or when editing */}
+                        {(!selectedLesson || (isHost && room.settings?.lessonSelection === "host_choice")) && (
                             <div className="text-center py-8 text-slate-500">
                                 {isHost ? (
                                     <div>
                                         <p className="mb-4">
-                                            Select a lesson to start the game
+                                            {selectedLesson ? "Change lesson or select a new one:" : "Select a lesson to start the game"}
                                         </p>
-                                        {isHost && room.settings?.lessonSelection ===
-                                            "host_choice" && (
+                                        {isHost && room.settings?.lessonSelection === "host_choice" && (
                                             <>
                                                 <button
                                                     onClick={() => {
-                                                        fetchLessons();
                                                         setSelectedLesson(null);
                                                     }}
                                                     className="mb-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                                                 >
-                                                    Chọn bài
+                                                    {selectedLesson ? "Chọn bài khác" : "Chọn bài"}
                                                 </button>
-                                                {availableLessons.length > 0 && selectedLesson === null && (
+                                                {availableLessons.length > 0 && (
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
                                                         {availableLessons.map(lesson => (
                                                             <button
@@ -916,20 +1342,28 @@ const MultiplayerRoom: React.FC = () => {
                                             Need at least 2 players to start
                                         </p>
                                     )}
-                                    {room.players.length >= 2 && !room.players.every(p => p.isReady) && (
+                                    {room.players.length >= 2 && !allNonHostReady && (
                                         <p className="text-sm text-amber-600 mb-2">
                                             All players must be ready to start
                                         </p>
                                     )}
                                 </div>
                                 <button
-                                    onClick={() => setPkStarted(true)}
+                                    onClick={handleStartGame}
                                     disabled={!canStartGame}
                                     className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold text-lg hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center space-x-3 mx-auto"
                                 >
                                     <Play className="w-6 h-6" />
                                     <span>Start Game</span>
                                 </button>
+                            </div>
+                        </div>
+                    )}
+                    {/* Non-host waiting message */}
+                    {!isHost && showWaitingForOthers && (
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mt-4">
+                            <div className="text-center text-amber-600 font-semibold">
+                                Waiting for other players to be ready...
                             </div>
                         </div>
                     )}
@@ -949,12 +1383,18 @@ const PKLessonWithRanking = ({
     onRankingUpdate: (r: any[]) => void
     selectedLesson: any
 }) => {
+    const { submitAnswer } = useGameRoomSignalR()
+    const { user } = useAuth()
+
     return (
         <DictationLessonForPK
             players={room.players}
             onScoreChange={onRankingUpdate}
             lessonId={selectedLesson?.lessonId}
             timeLimit={room.settings?.timeLimit || 60}
+            submitAnswer={submitAnswer}
+            roomId={room.id}
+            currentUser={user ? { id: user.id, name: user.username } : undefined}
         />
     )
 }

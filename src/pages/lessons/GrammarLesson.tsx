@@ -78,7 +78,7 @@ const GrammarLesson: React.FC = () => {
   const handleAnswerSubmit = () => {
     const currentExerciseData = lesson.exercises[currentExercise];
     const isCorrect = userAnswer.trim().toLowerCase() === currentExerciseData.correct.toLowerCase();
-    const score = isCorrect ? 10 : 4;
+    const score = isCorrect ? 1 : 0; // Thay đổi: 1 điểm cho mỗi câu hoàn thành đúng
 
     const aiFeedback = {
       score,
@@ -123,7 +123,7 @@ const GrammarLesson: React.FC = () => {
             <p className="text-slate-700">{currentExerciseData.instruction}</p>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-lg font-medium text-slate-800">
-                {currentExerciseData.sentence.replace('_____', '________')}
+                {currentExerciseData.sentence?.replace('_____', '________')}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -338,9 +338,9 @@ const GrammarLesson: React.FC = () => {
                     <p className="text-sm text-slate-700">{feedback.explanation}</p>
                     
                     <div className="text-center">
-                      <span className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-sm font-bold">
-                        Score: {feedback.score}/10
-                      </span>
+                      <div className="text-2xl font-bold text-slate-800 mb-2">
+                        Score: {feedback.score}/1
+                      </div>
                     </div>
                   </div>
                 </div>

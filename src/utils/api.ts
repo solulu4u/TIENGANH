@@ -375,6 +375,26 @@ export const selectLessonInRoom = async (roomId: string, lessonId: string) => {
         method: 'POST',
         body: JSON.stringify({ lessonId }),
     });
+};
+
+export const readyPlayerInMemory = async (roomId: string, isReady: boolean) => {
+    return apiCall(`/api/GameRoomInMemory/${roomId}/ready`, {
+        method: 'POST',
+        body: JSON.stringify({ isReady }),
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+};
+
+export const kickPlayerInMemory = async (roomId: string, targetUserId: string) => {
+    return apiCall(`/api/GameRoomInMemory/${roomId}/kick`, {
+        method: 'POST',
+        body: JSON.stringify({ targetUserId }),
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
 }; 
 
 export const refreshAccessToken = async (refreshToken: string): Promise<ApiResponse<{ accessToken: string; refreshToken: string }>> => {

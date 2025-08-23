@@ -11,7 +11,11 @@ export function useGameRoomSignalR(
   onRoomClosed?: (roomId: string) => void,
   onRoomUpdated?: (roomData: any) => void,
   onLessonSelected?: (lessonId: string, lessonTitle: string, lessonData?: any) => void,
-  onUpdateSettingsFailed?: (message: string) => void
+  onUpdateSettingsFailed?: (message: string) => void,
+  onPlayerReady?: (roomId: string) => void,
+  onPlayerKicked?: (roomId: string, kickedUserId: string) => void,
+  onGameStarted?: (roomId: string) => void,
+  onPlayerAnswered?: (answerData: any) => void
 ) {
   const connectionRef = useRef<HubConnection | null>(null);
 
@@ -60,6 +64,40 @@ export function useGameRoomSignalR(
     connection.on("LessonSelected", (lessonId, lessonTitle, lessonData) => {
       console.log("[SignalR] LessonSelected event received:", lessonId, lessonTitle, lessonData);
       onLessonSelected && onLessonSelected(lessonId, lessonTitle, lessonData);
+    });
+
+    // Lắng nghe sự kiện PlayerReady
+    connection.on("PlayerReady", (roomId) => {
+      console.log("[SignalR] PlayerReady event received:", roomId);
+      onPlayerReady && onPlayerReady(roomId);
+    });
+
+    // Lắng nghe sự kiện PlayerKicked
+    connection.on("PlayerKicked", (roomId, kickedUserId) => {
+      console.log("[SignalR] PlayerKicked event received:", roomId, "kicked user:", kickedUserId);
+      onPlayerKicked && onPlayerKicked(roomId, kickedUserId);
+    });
+
+    // Lắng nghe sự kiện GameStarted
+    connection.on("GameStarted", (roomId) => {
+      console.log("[SignalR] GameStarted event received:", roomId);
+      onGameStarted && onGameStarted(roomId);
+    });
+
+    // Lắng nghe sự kiện PlayerAnswered
+    connection.on("PlayerAnswered", (answerData) => {
+      console.log("[SignalR] PlayerAnswered event received:", answerData);
+      onPlayerAnswered && onPlayerAnswered(answerData);
+    });
+
+    // Lắng nghe sự kiện GameFinished
+    connection.on("GameFinished", () => {
+      console.log("[SignalR] GameFinished event received");
+    });
+
+    // Lắng nghe sự kiện GameResultSaved
+    connection.on("GameResultSaved", (gameSessionId) => {
+      console.log("[SignalR] GameResultSaved event received:", gameSessionId);
     });
 
     connection.on("TestResponse", (message) => {
@@ -171,13 +209,7 @@ export function useGameRoomSignalR(
     }
   }, []);
 
-  const endGame = useCallback((roomId: string) => {
-    if (isConnected()) {
-      connectionRef.current?.invoke("EndGame", roomId);
-    } else {
-      console.warn("SignalR not connected yet! endGame skipped.");
-    }
-  }, []);
+
 
   const testConnection = useCallback(async () => {
     if (isConnected()) {
@@ -212,7 +244,6 @@ export function useGameRoomSignalR(
     submitAnswer,
     startGame,
     nextSentence,
-    endGame,
     testConnection,
     testUpdateSettings,
     connection: connectionRef.current,

@@ -86,7 +86,7 @@ const ListeningLesson: React.FC = () => {
   const handleAnswerSubmit = () => {
     const currentQuestionData = lesson.questions[currentQuestion];
     const isCorrect = userAnswer === currentQuestionData.correct.toString();
-    const score = isCorrect ? 10 : 3;
+    const score = isCorrect ? 1 : 0; // Thay đổi: 1 điểm cho mỗi câu hoàn thành đúng
 
     const aiFeedback = {
       score,
@@ -262,9 +262,9 @@ const ListeningLesson: React.FC = () => {
                   </div>
                   
                   <div className="text-center">
-                    <span className="bg-purple-600 text-white px-3 py-1 rounded-lg text-sm font-bold">
-                      Score: {feedback.score}/10
-                    </span>
+                    <div className="text-2xl font-bold text-slate-800 mb-2">
+                      Score: {feedback.score}/1
+                    </div>
                   </div>
                 </div>
               )}

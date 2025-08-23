@@ -40,6 +40,7 @@ const MultiplayerLobby: React.FC = () => {
             console.log("[MultiplayerLobby] Settings updated:", settings)
         },
         (message: string) => {
+            if (message === "Join request sent successfully") return;
             setError(message)
             setTimeout(() => setError(""), 5000)
         },
@@ -238,7 +239,6 @@ const MultiplayerLobby: React.FC = () => {
                 if (response.success && typeof response.data === "string") {
                     navigate(`/dashboard/multiplayer/room/${response.data}`)
                 } else if (response.message === "already in this room") {
-                    // Nếu backend trả về roomId, dùng roomId đó để điều hướng
                     const anyResponse = response as any;
                     const roomId = (typeof anyResponse["roomId"] === "string" && anyResponse["roomId"]) || (typeof response.data === "string" && response.data) || targetRoomId;
                     navigate(`/dashboard/multiplayer/room/${roomId}`);
@@ -247,7 +247,6 @@ const MultiplayerLobby: React.FC = () => {
                     if (match) {
                         const existingRoomId = match[1]
                         if (existingRoomId === targetRoomId) {
-                            // Đang ở chính phòng này, cho vào lại luôn
                             navigate(`/dashboard/multiplayer/room/${existingRoomId}`)
                             return
                         }
@@ -256,7 +255,9 @@ const MultiplayerLobby: React.FC = () => {
                     }
                     setError("Bạn đang ở trong một phòng khác.")
                 } else if (response.message === "Invalid room ID format") {
-                    // Nếu user đã ở trong phòng, vẫn cho vào lại phòng cũ
+                    navigate(`/dashboard/multiplayer/room/${targetRoomId}`)
+                } else if (response.message === "Join request sent successfully") {
+                    // Không hiển thị thông báo, vào thẳng room
                     navigate(`/dashboard/multiplayer/room/${targetRoomId}`)
                 } else {
                     setError(response.message || "Failed to join room")
